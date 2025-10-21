@@ -1,0 +1,54 @@
+# Sensitive files - NEVER commit these!
+*.key
+*.pem
+.env
+config_xgb_5m.json
+*_secret*
+*_password*
+*credentials*
+
+# Model files (too large for git)
+models/*.pkl
+models/*.json
+
+# Data files
+data/*.feather
+data/*.json
+data/*.csv
+
+# Logs
+logs/*.log
+*.log
+
+# Session data
+sessions/*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# Docker
+*.tar
+*.tar.gz
+docker-compose.override.yml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Backtest results
+backtest_results/
