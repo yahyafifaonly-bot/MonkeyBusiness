@@ -1,0 +1,258 @@
+name: Deploy XGBoost Trading Bot to VPS
+
+on:
+  push:
+    branches:
+      - main
+      - production
+      - develop
+  workflow_dispatch:  # Allows manual deployment
+
+env:
+  DOCKER_IMAGE_NAME: xgb-trading-bot
+  DEPLOY_PATH: /home/${{ secrets.VPS_USER }}/xgb_trading
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Build Docker image
+        run: |
+          cd user_data/xgb_5m
+          docker build -t ${{ env.DOCKER_IMAGE_NAME }}:latest .
+
+      - name: Save Docker image
+        run: |
+          docker save ${{ env.DOCKER_IMAGE_NAME }}:latest | gzip > xgb-bot-image.tar.gz
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_KEY_PRIVATE }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Copy files to VPS
+        run: |
+          scp -i ~/.ssh/deploy_key -r user_data/xgb_5m/* ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${{ env.DEPLOY_PATH }}/
+          scp -i ~/.ssh/deploy_key xgb-bot-image.tar.gz ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${{ env.DEPLOY_PATH }}/
+
+      - name: Deploy to VPS
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
+            set -e
+
+            # Navigate to deployment directory
+            cd ${{ env.DEPLOY_PATH }}
+
+            echo "================================================"
+            echo "Starting deployment..."
+            echo "================================================"
+
+            # Load Docker image
+            echo "Loading Docker image..."
+            docker load < xgb-bot-image.tar.gz
+            rm xgb-bot-image.tar.gz
+
+            # Stop existing containers
+            echo "Stopping existing containers..."
+            docker-compose down || true
+
+            # Update configuration with secrets
+            echo "Updating configuration..."
+            cat > config_xgb_5m.json << 'EOF'
+          {
+            "max_open_trades": 8,
+            "stake_currency": "USDT",
+            "stake_amount": "unlimited",
+            "tradable_balance_ratio": 0.99,
+            "fiat_display_currency": "USD",
+            "dry_run": false,
+            "dry_run_wallet": 1000,
+            "cancel_open_orders_on_exit": true,
+
+            "trading_mode": "spot",
+            "margin_mode": "",
+
+            "unfilledtimeout": {
+              "entry": 5,
+              "exit": 5,
+              "unit": "minutes"
+            },
+
+            "entry_pricing": {
+              "price_side": "same",
+              "use_order_book": true,
+              "order_book_top": 1
+            },
+
+            "exit_pricing": {
+              "price_side": "same",
+              "use_order_book": true,
+              "order_book_top": 1
+            },
+
+            "exchange": {
+              "name": "binance",
+              "key": "${{ secrets.EXCHANGE_API_KEY }}",
+              "secret": "${{ secrets.EXCHANGE_API_SECRET }}",
+              "ccxt_config": {},
+              "ccxt_async_config": {},
+              "pair_whitelist": [
+                "BTC/USDT",
+                "ETH/USDT",
+                "SOL/USDT",
+                "BNB/USDT"
+              ],
+              "pair_blacklist": []
+            },
+
+            "pairlists": [
+              {
+                "method": "StaticPairList"
+              }
+            ],
+
+            "telegram": {
+              "enabled": false,
+              "token": "",
+              "chat_id": ""
+            },
+
+            "api_server": {
+              "enabled": true,
+              "listen_ip_address": "0.0.0.0",
+              "listen_port": 8083,
+              "verbosity": "info",
+              "enable_openapi": false,
+              "jwt_secret_key": "$(openssl rand -hex 32)",
+              "ws_token": "$(openssl rand -hex 32)",
+              "CORS_origins": [],
+              "username": "xgbtrader",
+              "password": "$(openssl rand -base64 32)"
+            },
+
+            "bot_name": "XGBoost_5m_Production",
+            "initial_state": "running",
+            "force_entry_enable": false,
+
+            "internals": {
+              "process_throttle_secs": 5
+            },
+
+            "edge": {
+              "enabled": false
+            }
+          }
+          EOF
+
+            # Create environment file with secrets
+            cat > .env << 'ENV'
+          EXCHANGE_API_KEY=${{ secrets.EXCHANGE_API_KEY }}
+          EXCHANGE_API_SECRET=${{ secrets.EXCHANGE_API_SECRET }}
+          SMTP_SERVER=${{ secrets.SMTP_SERVER }}
+          SMTP_PORT=${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME=${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}
+          NOTIFICATION_EMAIL=${{ secrets.NOTIFICATION_EMAIL }}
+          RECIPIENT_EMAILS=${{ secrets.RECIPIENT_EMAILS }}
+          MAILJET_API_KEY=${{ secrets.MAILJET_API_KEY }}
+          MAILJET_SECRET=${{ secrets.MAILJET_SECRET }}
+          MONGO_PASSWORD=${{ secrets.MONGO_PASSWORD }}
+          REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
+          ENV
+
+            # Check if model exists
+            if [ ! -f models/xgb_5m_latest.pkl ]; then
+              echo "WARNING: No trained model found!"
+              echo "You need to run: make train"
+            fi
+
+            # Start containers
+            echo "Starting containers..."
+            docker-compose up -d
+
+            # Wait for bot to start
+            echo "Waiting for bot to start..."
+            sleep 10
+
+            # Check health
+            echo "Checking bot health..."
+            if docker ps | grep -q xgb_5m_bot; then
+              echo "✓ Bot is running!"
+              docker-compose ps
+            else
+              echo "✗ Bot failed to start!"
+              docker-compose logs --tail=50
+              exit 1
+            fi
+
+            # Setup cron for auto training
+            echo "Setting up automated training..."
+            (crontab -l 2>/dev/null | grep -v "auto_incremental_train.sh"; echo "0 18 * * * ${{ env.DEPLOY_PATH }}/auto_incremental_train.sh") | crontab -
+
+            echo "================================================"
+            echo "Deployment completed successfully!"
+            echo "================================================"
+            echo "Bot URL: http://${{ secrets.VPS_HOST }}:8083"
+            echo "Monitor URL: http://${{ secrets.VPS_HOST }}:5001"
+            echo ""
+            echo "Next steps:"
+            echo "1. Check logs: docker-compose logs -f"
+            echo "2. Train model if needed: make train"
+            echo "3. View dashboard at the URLs above"
+          ENDSSH
+
+      - name: Verify deployment
+        run: |
+          sleep 5
+          ssh -i ~/.ssh/deploy_key ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
+            cd ${{ env.DEPLOY_PATH }}
+
+            echo "Final health check..."
+
+            # Check if containers are running
+            if docker-compose ps | grep -q "Up"; then
+              echo "✓ Containers are healthy"
+            else
+              echo "✗ Containers are not running properly"
+              docker-compose ps
+              exit 1
+            fi
+
+            # Show container status
+            docker-compose ps
+
+            # Show recent logs
+            echo ""
+            echo "Recent logs:"
+            docker-compose logs --tail=20
+          ENDSSH
+
+      - name: Send deployment notification
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          if [ "$STATUS" = "success" ]; then
+            MESSAGE="✅ XGBoost Trading Bot deployed successfully to VPS!"
+          else
+            MESSAGE="❌ Deployment failed! Check GitHub Actions logs."
+          fi
+
+          echo "Deployment $STATUS: $MESSAGE"
+
+          # You can add email notification here using your SMTP secrets
+          # or Mailjet API
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -f ~/.ssh/deploy_key
+          rm -f xgb-bot-image.tar.gz
