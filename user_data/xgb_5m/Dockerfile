@@ -48,7 +48,7 @@ RUN mkdir -p /app/user_data/xgb_5m/models \
 # Copy the XGBoost trading system files
 COPY train_xgb_5m.py /app/user_data/xgb_5m/
 COPY incremental_train.py /app/user_data/xgb_5m/
-COPY config_xgb_5m.json /app/user_data/xgb_5m/
+# Note: config_xgb_5m.json is generated on VPS with secrets, not copied here
 COPY strategies/ /app/user_data/xgb_5m/strategies/
 
 # Set permissions
