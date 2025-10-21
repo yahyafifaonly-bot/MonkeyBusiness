@@ -1,26 +1,36 @@
+# Git
 .git
 .gitignore
-Dockerfile
-Dockerfile.armhf
-.dockerignore
-docker/
-.coveragerc
-.eggs
-.github
-.pylintrc
-.travis.yml
-CONTRIBUTING.md
-MANIFEST.in
-README.md
-freqtrade.service
-freqtrade.egg-info
-.venv/
 
-config.json*
-*.sqlite
-user_data/
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+
+# Logs
 *.log
 
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
 .vscode
-.mypy_cache
-.ipynb_checkpoints
+.idea
+*.swp
+*.swo
+
+# Docker
+.dockerignore
+
+# Other
+node_modules
+*.md
+!QUICK_START.md

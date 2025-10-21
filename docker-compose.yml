@@ -1,36 +1,70 @@
----
+version: '3.8'
+
 services:
-  freqtrade:
-    image: freqtradeorg/freqtrade:stable
-    # image: freqtradeorg/freqtrade:develop
-    # Use plotting image
-    # image: freqtradeorg/freqtrade:develop_plot
-    # # Enable GPU Image and GPU Resources (only relevant for freqAI)
-    # # Make sure to uncomment the whole deploy section
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
-    # Build step - only needed when additional dependencies are needed
-    # build:
-    #   context: .
-    #   dockerfile: "./docker/Dockerfile.custom"
+  # Paper Trading Bot (Test Environment)
+  freqtrade-test:
+    build: .
+    container_name: freqtrade_paper_trading
     restart: unless-stopped
-    container_name: freqtrade
-    volumes:
-      - "./user_data:/freqtrade/user_data"
-    # Expose api on port 8080 (localhost only)
-    # Please read the https://www.freqtrade.io/en/stable/rest-api/ documentation
-    # for more information.
     ports:
-      - "127.0.0.1:8080:8080"
-    # Default command used when running `docker compose up`
+      - "8081:8081"
+    volumes:
+      - ./user_data:/freqtrade/user_data
     command: >
       trade
-      --logfile /freqtrade/user_data/logs/freqtrade.log
-      --db-url sqlite:////freqtrade/user_data/tradesv3.sqlite
-      --config /freqtrade/user_data/config.json
-      --strategy SampleStrategy
+      --config user_data/test_env/config_test.json
+      --strategy ScalpingLearner
+      --user-data-dir user_data/test_env
+      --datadir user_data/test_env/data
+    environment:
+      - FREQTRADE_DOCKER=1
+    networks:
+      - freqtrade-network
+
+  # ML Training Bot (Optional - runs separately)
+  freqtrade-ml:
+    build: .
+    container_name: freqtrade_ml_training
+    restart: "no"
+    profiles:
+      - ml
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./user_data:/freqtrade/user_data
+    command: >
+      trade
+      --config user_data/ml_env/config_ml.json
+      --strategy ScalpingLearner
+      --user-data-dir user_data/ml_env
+      --datadir user_data/ml_env/data
+    environment:
+      - FREQTRADE_DOCKER=1
+    networks:
+      - freqtrade-network
+
+  # Production Bot (Use with extreme caution!)
+  freqtrade-production:
+    build: .
+    container_name: freqtrade_production
+    restart: unless-stopped
+    profiles:
+      - production
+    ports:
+      - "8082:8082"
+    command: >
+      trade
+      --config user_data/production_env/config_production.json
+      --strategy ScalpingLearner
+      --user-data-dir user_data/production_env
+      --datadir user_data/production_env/data
+    volumes:
+      - ./user_data:/freqtrade/user_data
+    environment:
+      - FREQTRADE_DOCKER=1
+    networks:
+      - freqtrade-network
+
+networks:
+  freqtrade-network:
+    driver: bridge
