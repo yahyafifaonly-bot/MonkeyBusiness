@@ -256,3 +256,4 @@ jobs:
         run: |
           rm -f ~/.ssh/deploy_key
           rm -f xgb-bot-image.tar.gz
+
