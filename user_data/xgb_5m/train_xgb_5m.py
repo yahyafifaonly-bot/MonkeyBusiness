@@ -308,6 +308,11 @@ class XGBTrainer:
         y_pred = self.model.predict(X_test)
         y_pred_proba = self.model.predict_proba(X_test)[:, 1]
 
+        # Calculate win rate metrics
+        total_predicted_trades = (y_pred == 1).sum()
+        winning_trades = ((y_pred == 1) & (y_test == 1)).sum()
+        win_rate = winning_trades / total_predicted_trades if total_predicted_trades > 0 else 0
+
         # Calculate metrics
         self.training_metrics = {
             'accuracy': accuracy_score(y_test, y_pred),
@@ -315,6 +320,10 @@ class XGBTrainer:
             'recall': recall_score(y_test, y_pred, zero_division=0),
             'f1': f1_score(y_test, y_pred, zero_division=0),
             'roc_auc': roc_auc_score(y_test, y_pred_proba),
+            'win_rate': win_rate,
+            'total_predicted_trades': int(total_predicted_trades),
+            'winning_trades': int(winning_trades),
+            'losing_trades': int(total_predicted_trades - winning_trades),
             'train_samples': len(X_train),
             'test_samples': len(X_test),
             'positive_rate': y_train.mean(),
@@ -329,6 +338,12 @@ class XGBTrainer:
         logger.info(f"Recall:    {self.training_metrics['recall']:.4f}")
         logger.info(f"F1 Score:  {self.training_metrics['f1']:.4f}")
         logger.info(f"ROC AUC:   {self.training_metrics['roc_auc']:.4f}")
+        logger.info("")
+        logger.info("TRADING SIMULATION ON TEST SET")
+        logger.info(f"Win Rate:        {self.training_metrics['win_rate']:.2%}")
+        logger.info(f"Total Signals:   {self.training_metrics['total_predicted_trades']}")
+        logger.info(f"Winning Trades:  {self.training_metrics['winning_trades']}")
+        logger.info(f"Losing Trades:   {self.training_metrics['losing_trades']}")
         logger.info("=" * 60)
 
         # Feature importance

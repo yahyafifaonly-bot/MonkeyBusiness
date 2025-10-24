@@ -44,6 +44,31 @@ def training_data():
         'data': metadata
     })
 
+@app.route('/api/logs')
+def training_logs():
+    """Get recent training logs"""
+    try:
+        log_file = BASE_DIR / 'logs' / 'training.log'
+        if log_file.exists():
+            with open(log_file, 'r') as f:
+                # Get last 100 lines
+                lines = f.readlines()
+                recent_logs = lines[-100:] if len(lines) > 100 else lines
+                return jsonify({
+                    'status': 'success',
+                    'logs': ''.join(recent_logs)
+                })
+        else:
+            return jsonify({
+                'status': 'no_logs',
+                'logs': 'No training logs found'
+            })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'logs': f'Error reading logs: {str(e)}'
+        })
+
 @app.route('/')
 def dashboard():
     """Serve the dashboard HTML"""
