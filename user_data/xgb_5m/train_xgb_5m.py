@@ -61,6 +61,7 @@ class XGBTrainer:
         self.model = None
         self.feature_names = None
         self.training_metrics = {}
+        self.feature_importance = None
 
     def download_data(self):
         """Download historical data using freqtrade"""
@@ -336,6 +337,9 @@ class XGBTrainer:
             'importance': self.model.feature_importances_
         }).sort_values('importance', ascending=False)
 
+        # Store for later use in metadata
+        self.feature_importance = feature_importance
+
         logger.info("\nTop 15 Most Important Features:")
         logger.info(feature_importance.head(15).to_string())
 
@@ -379,6 +383,32 @@ class XGBTrainer:
             json.dump(metadata, f, indent=2)
 
         logger.info(f"Metadata saved to: {metadata_path}")
+
+        # Also save metadata with all dashboard fields
+        dashboard_metadata = {
+            'version': version,
+            'training_date': self.training_metrics['training_date'],
+            'timestamp': self.training_metrics['training_date'],
+            'model_file': f'xgb_5m_{version}.pkl',
+            'pairs': self.pairs,
+            'timeframe': self.timeframe,
+            'n_features': len(self.feature_names),
+            'training_samples': self.training_metrics['train_samples'],
+            'test_samples': self.training_metrics['test_samples'],
+            'metrics': self.training_metrics,
+            'feature_count': len(self.feature_names),
+            'feature_names': self.feature_names,
+            'feature_importance': [] if self.feature_importance is None else [
+                {'feature': row['feature'], 'importance': float(row['importance'])}
+                for _, row in self.feature_importance.iterrows()
+            ]
+        }
+
+        # Overwrite metadata file with complete dashboard data
+        with open(metadata_path, 'w') as f:
+            json.dump(dashboard_metadata, f, indent=2)
+
+        logger.info(f"Dashboard metadata saved to: {metadata_path}")
 
         # Create symlink to latest model
         latest_path = self.model_dir / 'xgb_5m_latest.pkl'

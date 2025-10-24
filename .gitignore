@@ -12,6 +12,16 @@ user_data/*
 user_data/freqaimodels/*
 user_data/models/*
 user_data/notebooks/*
+
+# XGB 5m - Track code but not data/models/logs
+!user_data/xgb_5m/
+user_data/xgb_5m/data/
+user_data/xgb_5m/models/
+user_data/xgb_5m/logs/
+user_data/xgb_5m/sessions/
+user_data/xgb_5m/config_xgb_5m.json
+user_data/xgb_5m/__pycache__/
+user_data/xgb_5m/strategies/__pycache__/
 freqtrade-plot.html
 freqtrade-profit-plot.html
 freqtrade/rpc/api_server/ui/*

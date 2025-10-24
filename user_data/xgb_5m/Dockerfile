@@ -66,5 +66,6 @@ ENV FREQTRADE_USER_DATA_DIR=/app/user_data
 CMD ["freqtrade", "trade", \
      "--config", "/app/user_data/xgb_5m/config_xgb_5m.json", \
      "--strategy", "XGBScalp5m", \
+     "--strategy-path", "/app/user_data/xgb_5m/strategies", \
      "--datadir", "/app/user_data/xgb_5m/data", \
      "--user-data-dir", "/app/user_data"]
