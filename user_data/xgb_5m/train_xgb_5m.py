@@ -67,7 +67,13 @@ class XGBTrainer:
         """Download historical data using freqtrade"""
         import subprocess
 
-        logger.info(f"Downloading {self.data_days} days of {self.timeframe} data for {len(self.pairs)} pairs...")
+        logger.info("=" * 60)
+        logger.info(f"STEP 1: Downloading Historical Data")
+        logger.info("=" * 60)
+        logger.info(f"Pairs: {', '.join(self.pairs)}")
+        logger.info(f"Timeframe: {self.timeframe}")
+        logger.info(f"Days: {self.data_days}")
+        logger.info(f"Exchange: Binance")
 
         cmd = [
             'freqtrade', 'download-data',
@@ -79,12 +85,13 @@ class XGBTrainer:
         ]
 
         try:
+            logger.info("Fetching data from Binance...")
             result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-            logger.info("Data download completed successfully")
+            logger.info("✓ Data download completed successfully")
             logger.debug(result.stdout)
             return True
         except subprocess.CalledProcessError as e:
-            logger.error(f"Data download failed: {e.stderr}")
+            logger.error(f"✗ Data download failed: {e.stderr}")
             return False
 
     def load_data(self, pair):
@@ -126,7 +133,10 @@ class XGBTrainer:
 
     def calculate_indicators(self, df):
         """Calculate technical indicators and features"""
-        logger.info("Calculating technical indicators...")
+        logger.info("=" * 60)
+        logger.info("STEP 3: Calculating Technical Indicators")
+        logger.info("=" * 60)
+        logger.info("Calculating 49+ technical features...")
 
         df = df.copy()
 
@@ -205,7 +215,7 @@ class XGBTrainer:
         df['dow_sin'] = np.sin(2 * np.pi * df['day_of_week'] / 7)
         df['dow_cos'] = np.cos(2 * np.pi * df['day_of_week'] / 7)
 
-        logger.info(f"Calculated {len(df.columns)} features")
+        logger.info(f"✓ Calculated {len(df.columns)} features")
 
         return df
 
@@ -215,7 +225,12 @@ class XGBTrainer:
         1 if price rises >= target_pct within target_candles
         0 otherwise
         """
-        logger.info(f"Creating labels: Target {self.target_pct_min*100:.1f}-{self.target_pct_max*100:.1f}% within {self.target_candles} candles")
+        logger.info("=" * 60)
+        logger.info("STEP 4: Creating Training Labels")
+        logger.info("=" * 60)
+        logger.info(f"Target profit: {self.target_pct_min*100:.1f}%-{self.target_pct_max*100:.1f}%")
+        logger.info(f"Look-ahead window: {self.target_candles} candles (30 minutes)")
+        logger.info("Creating labels...")
 
         df = df.copy()
 
@@ -237,7 +252,12 @@ class XGBTrainer:
 
     def prepare_features(self, df):
         """Select and prepare features for training"""
+        logger.info("=" * 60)
+        logger.info("STEP 5: Preparing Features for Training")
+        logger.info("=" * 60)
+
         # Drop NaN values
+        logger.info("Cleaning data (removing NaN values)...")
         df = df.dropna()
 
         # Select feature columns (exclude target, pair, and original OHLCV)
@@ -252,14 +272,17 @@ class XGBTrainer:
 
         self.feature_names = feature_cols
 
-        logger.info(f"Selected {len(feature_cols)} features for training")
-        logger.info(f"Training dataset: {len(X)} samples")
+        logger.info(f"✓ Selected {len(feature_cols)} features for training")
+        logger.info(f"✓ Training dataset: {len(X):,} samples")
+        logger.info(f"✓ Features: {', '.join(feature_cols[:10])}{'...' if len(feature_cols) > 10 else ''}")
 
         return X, y, df.index
 
     def train_model(self, X, y, timestamps):
         """Train XGBoost model with time-series cross-validation"""
-        logger.info("Starting model training with walk-forward validation...")
+        logger.info("=" * 60)
+        logger.info("STEP 6: Training XGBoost Model")
+        logger.info("=" * 60)
 
         # Time-based train/test split (80/20)
         split_idx = int(len(X) * 0.8)
@@ -269,12 +292,13 @@ class XGBTrainer:
         X_test = X.iloc[split_idx:]
         y_test = y.iloc[split_idx:]
 
-        logger.info(f"Train set: {len(X_train)} samples ({timestamps[0]} to {timestamps[split_idx-1]})")
-        logger.info(f"Test set: {len(X_test)} samples ({timestamps[split_idx]} to {timestamps[-1]})")
+        logger.info(f"Train set: {len(X_train):,} samples ({timestamps[0]} to {timestamps[split_idx-1]})")
+        logger.info(f"Test set: {len(X_test):,} samples ({timestamps[split_idx]} to {timestamps[-1]})")
 
         # Calculate scale_pos_weight for imbalanced classes
         scale_pos_weight = (y_train == 0).sum() / (y_train == 1).sum()
         logger.info(f"Class imbalance ratio: {scale_pos_weight:.2f}")
+        logger.info("")
 
         # XGBoost parameters optimized for high-frequency trading
         params = {
@@ -298,11 +322,38 @@ class XGBTrainer:
         # Train model with early stopping
         self.model = xgb.XGBClassifier(**params)
 
+        logger.info("=" * 60)
+        logger.info("Starting XGBoost training iterations...")
+        logger.info(f"Estimators: {params['n_estimators']}")
+        logger.info(f"Learning rate: {params['learning_rate']}")
+        logger.info(f"Max depth: {params['max_depth']}")
+        logger.info("=" * 60)
+
+        # Custom callback to log training progress
+        class LoggingCallback(xgb.callback.TrainingCallback):
+            def after_iteration(self, model, epoch, evals_log):
+                """Log metrics after each iteration"""
+                if epoch % 10 == 0:  # Log every 10 iterations
+                    # Get latest metrics
+                    train_logloss = evals_log['validation_0']['logloss'][-1]
+                    train_auc = evals_log['validation_0']['auc'][-1]
+                    test_logloss = evals_log['validation_1']['logloss'][-1]
+                    test_auc = evals_log['validation_1']['auc'][-1]
+
+                    logger.info(f"[{epoch}] train-logloss: {train_logloss:.5f}, train-auc: {train_auc:.5f}, "
+                               f"test-logloss: {test_logloss:.5f}, test-auc: {test_auc:.5f}")
+                return False
+
         self.model.fit(
             X_train, y_train,
             eval_set=[(X_train, y_train), (X_test, y_test)],
-            verbose=100
+            verbose=False,  # Disable default verbose, use callback instead
+            callbacks=[LoggingCallback()]
         )
+
+        logger.info("=" * 60)
+        logger.info("XGBoost training completed!")
+        logger.info("=" * 60)
 
         # Evaluate on test set
         y_pred = self.model.predict(X_test)
@@ -500,18 +551,24 @@ class XGBTrainer:
             return None
 
         # Step 2: Load and combine data from all pairs
+        logger.info("=" * 60)
+        logger.info("STEP 2: Loading and Combining Data")
+        logger.info("=" * 60)
+
         all_data = []
         for pair in self.pairs:
+            logger.info(f"Loading data for {pair}...")
             df = self.load_data(pair)
             if df is not None:
                 all_data.append(df)
+                logger.info(f"  ✓ {pair}: {len(df):,} candles loaded")
 
         if not all_data:
             logger.error("No data loaded. Exiting.")
             return None
 
         combined_df = pd.concat(all_data, axis=0).sort_index()
-        logger.info(f"Combined dataset: {len(combined_df)} total candles across {len(self.pairs)} pairs")
+        logger.info(f"✓ Combined dataset: {len(combined_df):,} total candles across {len(self.pairs)} pairs")
 
         # Step 3: Calculate indicators
         combined_df = self.calculate_indicators(combined_df)
