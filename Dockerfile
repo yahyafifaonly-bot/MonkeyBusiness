@@ -9,6 +9,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 USER ftuser
 
+# Install FreqAI dependencies including datasieve
+RUN pip install --no-cache-dir datasieve scikit-learn scipy catboost lightgbm xgboost
+
 # Copy strategy and configuration files
 COPY --chown=ftuser:ftuser user_data /freqtrade/user_data
 
