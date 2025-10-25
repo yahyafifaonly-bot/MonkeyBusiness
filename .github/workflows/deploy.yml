@@ -9,6 +9,8 @@ on:
       - 'user_data/Production_env/**'
       - 'docker-compose-testing.yml'
       - 'docker-compose-production.yml'
+      - 'docker-compose-dashboard.yml'
+      - 'backtest_dashboard/**'
       - 'config_backtest.json'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
@@ -300,4 +302,66 @@ jobs:
             echo "✅ Backtest completed successfully! Check logs above for results."
           else
             echo "❌ Backtest failed!"
+          fi
+
+  deploy-dashboard:
+    name: Deploy Backtest Dashboard
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy Dashboard to VPS
+        run: |
+          # Copy dashboard files to VPS
+          scp -i ~/.ssh/deploy_key -r backtest_dashboard ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:~/
+          scp -i ~/.ssh/deploy_key docker-compose-dashboard.yml ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:~/
+
+          # Deploy dashboard on VPS
+          ssh -i ~/.ssh/deploy_key ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
+            cd ~
+
+            echo "================================================"
+            echo "Deploying Backtest Dashboard"
+            echo "================================================"
+
+            # Stop existing dashboard if running
+            docker compose -f docker-compose-dashboard.yml down 2>/dev/null || true
+
+            # Build and start dashboard
+            docker compose -f docker-compose-dashboard.yml up -d --build
+
+            echo ""
+            echo "Checking dashboard status..."
+            docker ps | grep backtest_dashboard || echo "Dashboard container not found"
+
+            echo ""
+            echo "================================================"
+            echo "Dashboard Deployment Complete!"
+            echo "================================================"
+            echo ""
+            echo "Access your dashboard at:"
+            echo "  http://72.61.162.23:8091"
+          ENDSSH
+
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
+
+      - name: Send notification
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          if [ "$STATUS" = "success" ]; then
+            echo "✅ Dashboard deployed successfully! Visit http://72.61.162.23:8091"
+          else
+            echo "❌ Dashboard deployment failed!"
           fi
