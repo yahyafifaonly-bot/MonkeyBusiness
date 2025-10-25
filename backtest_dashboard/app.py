@@ -32,10 +32,18 @@ def parse_backtest_log(log_path):
             'max_open_trades': None,
         }
 
-        # Extract timestamp from filename
-        ts_match = re.search(r'backtest_(\d{8}_\d{6})\.log', data['filename'])
+        # Extract timestamp and strategy from filename
+        # Format: backtest_StrategyName_YYYYMMDD_HHMMSS.log or backtest_YYYYMMDD_HHMMSS.log
+        ts_match = re.search(r'backtest_(?:(.+?)_)?(\d{8}_\d{6})\.log', data['filename'])
         if ts_match:
-            ts_str = ts_match.group(1)
+            # Extract strategy name from filename if present
+            if ts_match.group(1):
+                filename_strategy = ts_match.group(1)
+                if not data['strategy']:
+                    data['strategy'] = filename_strategy
+
+            # Extract timestamp
+            ts_str = ts_match.group(2)
             data['timestamp'] = datetime.strptime(ts_str, '%Y%m%d_%H%M%S').strftime('%Y-%m-%d %H:%M:%S')
 
         # Extract timerange and max open trades
