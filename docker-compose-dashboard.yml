@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  backtest-dashboard:
+    build: ./backtest_dashboard
+    container_name: backtest_dashboard
+    ports:
+      - "8091:8091"
+    volumes:
+      - ~/freqtrade_backtest/backtest_logs:/freqtrade_backtest/backtest_logs:ro
+    restart: unless-stopped
+    environment:
+      - TZ=UTC
