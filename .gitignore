@@ -13,6 +13,18 @@ user_data/freqaimodels/*
 user_data/models/*
 user_data/notebooks/*
 
+# Track Testing and Production environments
+!user_data/Testing_env/
+!user_data/Production_env/
+!user_data/Testing_env/**
+!user_data/Production_env/**
+!user_data/Testing_env/*.json
+!user_data/Production_env/*.json
+user_data/Testing_env/logs/
+user_data/Production_env/logs/
+user_data/Testing_env/*.sqlite*
+user_data/Production_env/*.sqlite*
+
 # XGB 5m - Track code but not data/models/logs
 !user_data/xgb_5m/
 user_data/xgb_5m/data/
@@ -125,4 +137,4 @@ target/
 !config_examples/config_kraken.example.json
 !config_examples/config_freqai.example.json
 
-docker-compose-*.yml
+# docker-compose-*.yml - Commented out to track testing and production compose files
