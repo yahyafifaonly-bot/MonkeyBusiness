@@ -25,7 +25,7 @@ Expected Improvements:
 - Positive expectancy
 
 Last Updated: 2025-10-25 - Improved parameters based on backtest analysis
-Auto-backtest enabled - Results shown in GitHub Actions logs
+Auto-backtest enabled - Results shown in GitHub Actions logs and saved to VPS
 """
 
 from freqtrade.strategy import IStrategy
