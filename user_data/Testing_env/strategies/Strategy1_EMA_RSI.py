@@ -50,7 +50,7 @@ class Strategy1_EMA_RSI(IStrategy):
     use_exit_signal = True
 
     # EMA distance threshold
-    max_ema_distance_pct = 0.2  # 0.2% max distance from 9 EMA
+    max_ema_distance_pct = 1.0  # 1% max distance from 9 EMA (relaxed)
 
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         """Calculate indicators"""
@@ -77,11 +77,11 @@ class Strategy1_EMA_RSI(IStrategy):
 
         # Consecutive green candles above EMA9
         dataframe['green_above_ema9_count'] = 0
-        for i in range(3, len(dataframe)):
+        for i in range(2, len(dataframe)):
             if all(dataframe['is_green'].iloc[i-j] == 1 and
                    dataframe['close_above_ema9'].iloc[i-j] == 1
-                   for j in range(3)):
-                dataframe.loc[dataframe.index[i], 'green_above_ema9_count'] = 3
+                   for j in range(2)):
+                dataframe.loc[dataframe.index[i], 'green_above_ema9_count'] = 2
 
         # Consecutive red candles below EMA9 (disable signal)
         dataframe['red_below_ema9_count'] = 0
@@ -108,24 +108,20 @@ class Strategy1_EMA_RSI(IStrategy):
                 # 9 EMA trending up
                 (dataframe['ema9_slope'] > 0) &
 
-                # Price near 9 EMA (within 0.2%)
+                # Price near 9 EMA (within 1% - relaxed)
                 (abs(dataframe['distance_to_ema9']) <= self.max_ema_distance_pct) &
 
-                # RSI crosses above 50
-                (dataframe['rsi'] > 50) &
-                (dataframe['rsi'].shift(1) <= 50) &
+                # RSI > 40 (relaxed from crossing 50)
+                (dataframe['rsi'] > 40) &
 
                 # RSI rising
                 (dataframe['rsi_rising'] == 1) &
 
-                # 3 consecutive green candles above 9 EMA
-                (dataframe['green_above_ema9_count'] >= 3) &
+                # 2 consecutive green candles above 9 EMA (relaxed from 3)
+                (dataframe['green_above_ema9_count'] >= 2) &
 
                 # No 3 consecutive red candles below EMA recently
                 (dataframe['red_below_ema9_count'].rolling(10).sum() == 0) &
-
-                # Volume confirmation (optional but included)
-                (dataframe['volume'] > dataframe['volume_sma_3']) &
 
                 # Green candle with upward momentum
                 (dataframe['close'] > dataframe['open']) &
