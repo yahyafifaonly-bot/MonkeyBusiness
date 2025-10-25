@@ -1,0 +1,161 @@
+========================================
+RUN BACKTEST ON YOUR VPS
+========================================
+
+Since Docker is not running locally, run the backtest on your VPS where Docker is already installed.
+
+Copy and paste these commands on your VPS:
+
+========================================
+STEP 1: CREATE BACKTEST DIRECTORY
+========================================
+
+ssh root@72.61.162.23
+
+cd ~
+mkdir -p freqtrade_backtest
+cd freqtrade_backtest
+
+========================================
+STEP 2: CREATE CONFIG FILE
+========================================
+
+cat > config_backtest.json << 'EOF'
+{
+    "max_open_trades": 3,
+    "stake_currency": "USDT",
+    "stake_amount": 100,
+    "tradable_balance_ratio": 0.99,
+    "fiat_display_currency": "USD",
+    "dry_run": true,
+    "cancel_open_orders_on_exit": true,
+    "trading_mode": "spot",
+    "margin_mode": "",
+    "unfilledtimeout": {
+        "entry": 10,
+        "exit": 10,
+        "unit": "minutes"
+    },
+    "entry_pricing": {
+        "price_side": "same",
+        "use_order_book": true,
+        "order_book_top": 1
+    },
+    "exit_pricing": {
+        "price_side": "same",
+        "use_order_book": true,
+        "order_book_top": 1
+    },
+    "exchange": {
+        "name": "binance",
+        "key": "",
+        "secret": "",
+        "pair_whitelist": [
+            "BTC/USDT",
+            "ETH/USDT",
+            "SOL/USDT",
+            "BNB/USDT",
+            "XRP/USDT",
+            "ADA/USDT",
+            "DOGE/USDT",
+            "MATIC/USDT",
+            "DOT/USDT",
+            "AVAX/USDT"
+        ]
+    },
+    "pairlists": [
+        {"method": "StaticPairList"}
+    ],
+    "api_server": {
+        "enabled": false
+    },
+    "bot_name": "Strategy1_Backtest",
+    "initial_state": "running"
+}
+EOF
+
+========================================
+STEP 3: COPY STRATEGY FILE
+========================================
+
+mkdir -p user_data/strategies
+cp ~/freqtrade/Testing_env/strategies/Strategy1_EMA_RSI.py user_data/strategies/
+
+========================================
+STEP 4: DOWNLOAD 3 YEARS OF DATA
+========================================
+
+This will take 10-20 minutes:
+
+docker run --rm \
+    -v "$(pwd)/user_data:/freqtrade/user_data" \
+    freqtradeorg/freqtrade:stable \
+    download-data \
+    --exchange binance \
+    --pairs BTC/USDT ETH/USDT SOL/USDT BNB/USDT XRP/USDT ADA/USDT DOGE/USDT MATIC/USDT DOT/USDT AVAX/USDT \
+    --timeframes 1m \
+    --days 1095 \
+    --data-format-ohlcv json \
+    --trading-mode spot
+
+========================================
+STEP 5: RUN BACKTEST
+========================================
+
+This will take 5-15 minutes:
+
+docker run --rm \
+    -v "$(pwd)/user_data:/freqtrade/user_data" \
+    -v "$(pwd)/config_backtest.json:/freqtrade/config_backtest.json" \
+    freqtradeorg/freqtrade:stable \
+    backtesting \
+    --config /freqtrade/config_backtest.json \
+    --strategy Strategy1_EMA_RSI \
+    --timeframe 1m \
+    --timerange 20220101- \
+    --export trades \
+    --breakdown day week month
+
+========================================
+STEP 6: VIEW RESULTS
+========================================
+
+docker run --rm \
+    -v "$(pwd)/user_data:/freqtrade/user_data" \
+    -v "$(pwd)/config_backtest.json:/freqtrade/config_backtest.json" \
+    freqtradeorg/freqtrade:stable \
+    backtesting-show
+
+========================================
+WHAT YOU'LL SEE
+========================================
+
+The output will show:
+
+✅ Total Trades
+✅ Win Rate %
+✅ Loss Rate %
+✅ Total Profit %
+✅ Total Profit USDT
+✅ Avg Profit per Trade
+✅ Max Drawdown
+✅ Sharpe Ratio
+✅ Win/Loss Ratio
+✅ Best Trade
+✅ Worst Trade
+✅ Average Trade Duration
+✅ Trades per Day
+✅ Performance by Pair
+✅ Monthly/Weekly/Daily Breakdown
+
+========================================
+DETAILED RESULTS FILE
+========================================
+
+Results saved to:
+~/freqtrade_backtest/user_data/backtest_results/
+
+View detailed JSON:
+cat user_data/backtest_results/backtest-result-*.json | head -100
+
+========================================
