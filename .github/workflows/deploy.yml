@@ -274,28 +274,31 @@ jobs:
               # Create timestamped log file for this strategy
               LOG_FILE="backtest_logs/backtest_${STRATEGY_NAME}_$(date +%Y%m%d_%H%M%S).log"
 
-              echo "" | tee -a "$LOG_FILE"
-              echo "================================================" | tee -a "$LOG_FILE"
-              echo "Running Backtest for $STRATEGY_NAME" | tee -a "$LOG_FILE"
-              echo "Timestamp: $(date)" | tee -a "$LOG_FILE"
-              echo "================================================" | tee -a "$LOG_FILE"
-              echo "" | tee -a "$LOG_FILE"
+              {
+                echo ""
+                echo "================================================"
+                echo "Running Backtest for $STRATEGY_NAME"
+                echo "Timestamp: $(date)"
+                echo "================================================"
+                echo ""
 
-              # Run backtest (auto-detects timeframe from strategy file)
-              docker run --rm \
-                -v "$(pwd)/user_data:/freqtrade/user_data" \
-                -v "$(pwd)/config_backtest.json:/freqtrade/config_backtest.json" \
-                freqtradeorg/freqtrade:stable \
-                backtesting \
-                --config /freqtrade/config_backtest.json \
-                --strategy $STRATEGY_NAME \
-                --timerange 20250826- 2>&1 | tee -a "$LOG_FILE"
+                # Run backtest (auto-detects timeframe from strategy file)
+                docker run --rm \
+                  -v "$(pwd)/user_data:/freqtrade/user_data" \
+                  -v "$(pwd)/config_backtest.json:/freqtrade/config_backtest.json" \
+                  freqtradeorg/freqtrade:stable \
+                  backtesting \
+                  --config /freqtrade/config_backtest.json \
+                  --strategy $STRATEGY_NAME \
+                  --timerange 20250826-
 
-              echo "" | tee -a "$LOG_FILE"
-              echo "================================================" | tee -a "$LOG_FILE"
-              echo "Backtest Complete for $STRATEGY_NAME!" | tee -a "$LOG_FILE"
-              echo "Log saved to: ~/freqtrade_backtest/$LOG_FILE" | tee -a "$LOG_FILE"
-              echo "================================================" | tee -a "$LOG_FILE"
+                echo ""
+                echo "================================================"
+                echo "Backtest Complete for $STRATEGY_NAME!"
+                echo "Log saved to: ~/freqtrade_backtest/$LOG_FILE"
+                echo "================================================"
+              } 2>&1 | tee -a "$LOG_FILE"
+
               echo ""
             done
 
