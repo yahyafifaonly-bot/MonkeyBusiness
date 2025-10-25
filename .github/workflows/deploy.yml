@@ -224,21 +224,33 @@ jobs:
             echo "Checking for existing backtest data..."
             echo "================================================"
 
-            # Check if data exists, if not download it (only 30 days for faster testing)
+            # Check if data exists, if not download it
             if [ ! -d "user_data/data/binance" ] || [ -z "$(ls -A user_data/data/binance 2>/dev/null)" ]; then
-              echo "Downloading 30 days of 1m data for quick backtest..."
+              echo "Downloading historical data for backtest..."
               docker run --rm \
                 -v "$(pwd)/user_data:/freqtrade/user_data" \
+                -v "$(pwd)/config_backtest.json:/freqtrade/config_backtest.json" \
                 freqtradeorg/freqtrade:stable \
                 download-data \
                 --exchange binance \
-                --pairs BTC/USDT ETH/USDT SOL/USDT \
+                --config /freqtrade/config_backtest.json \
                 --timeframes 1m \
-                --days 30 \
+                --days 60 \
                 --data-format-ohlcv json \
                 --trading-mode spot
             else
-              echo "Data already exists, skipping download."
+              echo "Data already exists. Refreshing latest data..."
+              docker run --rm \
+                -v "$(pwd)/user_data:/freqtrade/user_data" \
+                -v "$(pwd)/config_backtest.json:/freqtrade/config_backtest.json" \
+                freqtradeorg/freqtrade:stable \
+                download-data \
+                --exchange binance \
+                --config /freqtrade/config_backtest.json \
+                --timeframes 1m \
+                --days 3 \
+                --data-format-ohlcv json \
+                --trading-mode spot
             fi
 
             echo ""
