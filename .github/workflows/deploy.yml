@@ -9,6 +9,7 @@ on:
       - 'user_data/Production_env/**'
       - 'docker-compose-testing.yml'
       - 'docker-compose-production.yml'
+      - 'config_backtest.json'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
     inputs:
@@ -181,4 +182,99 @@ jobs:
             echo "✅ Production_env deployed successfully!"
           else
             echo "❌ Deployment to Production_env failed!"
+          fi
+
+  backtest-strategy1:
+    name: Backtest Strategy1_EMA_RSI
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && contains(github.event.head_commit.modified, 'Strategy1_EMA_RSI.py')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy Backtest Files and Run Backtest
+        run: |
+          # Create backtest directory on VPS
+          ssh -i ~/.ssh/deploy_key ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
+            mkdir -p ~/freqtrade_backtest/user_data/strategies
+            echo "================================================"
+            echo "Setting up Backtest Environment"
+            echo "================================================"
+          ENDSSH
+
+          # Copy backtest config
+          scp -i ~/.ssh/deploy_key config_backtest.json ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:~/freqtrade_backtest/
+
+          # Copy Strategy1
+          scp -i ~/.ssh/deploy_key user_data/Testing_env/strategies/Strategy1_EMA_RSI.py ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:~/freqtrade_backtest/user_data/strategies/
+
+          # Run backtest on VPS
+          ssh -i ~/.ssh/deploy_key ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
+            cd ~/freqtrade_backtest
+
+            echo ""
+            echo "================================================"
+            echo "Checking for existing backtest data..."
+            echo "================================================"
+
+            # Check if data exists, if not download it (only 30 days for faster testing)
+            if [ ! -d "user_data/data/binance" ] || [ -z "$(ls -A user_data/data/binance 2>/dev/null)" ]; then
+              echo "Downloading 30 days of 1m data for quick backtest..."
+              docker run --rm \
+                -v "$(pwd)/user_data:/freqtrade/user_data" \
+                freqtradeorg/freqtrade:stable \
+                download-data \
+                --exchange binance \
+                --pairs BTC/USDT ETH/USDT SOL/USDT \
+                --timeframes 1m \
+                --days 30 \
+                --data-format-ohlcv json \
+                --trading-mode spot
+            else
+              echo "Data already exists, skipping download."
+            fi
+
+            echo ""
+            echo "================================================"
+            echo "Running Backtest for Strategy1_EMA_RSI"
+            echo "================================================"
+            echo ""
+
+            # Run backtest
+            docker run --rm \
+              -v "$(pwd)/user_data:/freqtrade/user_data" \
+              -v "$(pwd)/config_backtest.json:/freqtrade/config_backtest.json" \
+              freqtradeorg/freqtrade:stable \
+              backtesting \
+              --config /freqtrade/config_backtest.json \
+              --strategy Strategy1_EMA_RSI \
+              --timeframe 1m \
+              --timerange 20241001-
+
+            echo ""
+            echo "================================================"
+            echo "Backtest Complete!"
+            echo "================================================"
+          ENDSSH
+
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
+
+      - name: Send notification
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          if [ "$STATUS" = "success" ]; then
+            echo "✅ Backtest completed successfully! Check logs above for results."
+          else
+            echo "❌ Backtest failed!"
           fi
