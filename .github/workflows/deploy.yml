@@ -186,8 +186,8 @@ jobs:
             echo "❌ Deployment to Production_env failed!"
           fi
 
-  backtest-strategy1:
-    name: Backtest Strategy1_EMA_RSI
+  backtest-all-strategies:
+    name: Backtest All Strategies
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
     steps:
@@ -201,7 +201,7 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Deploy Backtest Files and Run Backtest
+      - name: Deploy Backtest Files and Run All Backtests
         run: |
           # Create backtest directory on VPS
           ssh -i ~/.ssh/deploy_key ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
@@ -215,25 +215,21 @@ jobs:
           # Copy backtest config
           scp -i ~/.ssh/deploy_key config_backtest.json ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:~/freqtrade_backtest/
 
-          # Copy Strategy1
-          scp -i ~/.ssh/deploy_key user_data/Testing_env/strategies/Strategy1_EMA_RSI.py ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:~/freqtrade_backtest/user_data/strategies/
+          # Copy ALL strategies from Testing_env
+          scp -i ~/.ssh/deploy_key user_data/Testing_env/strategies/*.py ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:~/freqtrade_backtest/user_data/strategies/
 
-          # Run backtest on VPS
+          # Run backtest for ALL strategies on VPS
           ssh -i ~/.ssh/deploy_key ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
             cd ~/freqtrade_backtest
-
-            # Create timestamped log file
-            LOG_FILE="backtest_logs/backtest_$(date +%Y%m%d_%H%M%S).log"
-            echo "Logging backtest results to: $LOG_FILE"
 
             echo ""
             echo "================================================"
             echo "Checking for existing backtest data..."
             echo "================================================"
 
-            # Check if data exists, if not download it
+            # Download data for multiple timeframes (1m and 5m)
             if [ ! -d "user_data/data/binance" ] || [ -z "$(ls -A user_data/data/binance 2>/dev/null)" ]; then
-              echo "Downloading historical data for backtest..." | tee -a "$LOG_FILE"
+              echo "Downloading historical data for backtest..."
               docker run --rm \
                 -v "$(pwd)/user_data:/freqtrade/user_data" \
                 -v "$(pwd)/config_backtest.json:/freqtrade/config_backtest.json" \
@@ -241,12 +237,12 @@ jobs:
                 download-data \
                 --exchange binance \
                 --config /freqtrade/config_backtest.json \
-                --timeframes 1m \
+                --timeframes 1m 5m \
                 --days 60 \
                 --data-format-ohlcv json \
-                --trading-mode spot 2>&1 | tee -a "$LOG_FILE"
+                --trading-mode spot
             else
-              echo "Data already exists. Refreshing latest data..." | tee -a "$LOG_FILE"
+              echo "Data already exists. Refreshing latest data..."
               docker run --rm \
                 -v "$(pwd)/user_data:/freqtrade/user_data" \
                 -v "$(pwd)/config_backtest.json:/freqtrade/config_backtest.json" \
@@ -254,40 +250,62 @@ jobs:
                 download-data \
                 --exchange binance \
                 --config /freqtrade/config_backtest.json \
-                --timeframes 1m \
+                --timeframes 1m 5m \
                 --days 3 \
                 --data-format-ohlcv json \
-                --trading-mode spot 2>&1 | tee -a "$LOG_FILE"
+                --trading-mode spot
             fi
 
-            echo "" | tee -a "$LOG_FILE"
-            echo "================================================" | tee -a "$LOG_FILE"
-            echo "Running Backtest for Strategy1_EMA_RSI" | tee -a "$LOG_FILE"
-            echo "Timestamp: $(date)" | tee -a "$LOG_FILE"
-            echo "================================================" | tee -a "$LOG_FILE"
-            echo "" | tee -a "$LOG_FILE"
+            echo ""
+            echo "================================================"
+            echo "Running Backtests for All Strategies"
+            echo "================================================"
+            echo ""
 
-            # Run backtest and capture output
-            docker run --rm \
-              -v "$(pwd)/user_data:/freqtrade/user_data" \
-              -v "$(pwd)/config_backtest.json:/freqtrade/config_backtest.json" \
-              freqtradeorg/freqtrade:stable \
-              backtesting \
-              --config /freqtrade/config_backtest.json \
-              --strategy Strategy1_EMA_RSI \
-              --timeframe 1m \
-              --timerange 20250826- 2>&1 | tee -a "$LOG_FILE"
+            # Loop through all strategy files
+            for strategy_file in user_data/strategies/*.py; do
+              # Extract strategy name (without .py extension)
+              STRATEGY_NAME=$(basename "$strategy_file" .py)
 
-            echo "" | tee -a "$LOG_FILE"
-            echo "================================================" | tee -a "$LOG_FILE"
-            echo "Backtest Complete!" | tee -a "$LOG_FILE"
-            echo "Log saved to: ~/freqtrade_backtest/$LOG_FILE" | tee -a "$LOG_FILE"
-            echo "================================================" | tee -a "$LOG_FILE"
+              echo "------------------------------------------------"
+              echo "Backtesting: $STRATEGY_NAME"
+              echo "------------------------------------------------"
 
-            # Show last 5 backtest logs
+              # Create timestamped log file for this strategy
+              LOG_FILE="backtest_logs/backtest_${STRATEGY_NAME}_$(date +%Y%m%d_%H%M%S).log"
+
+              echo "" | tee -a "$LOG_FILE"
+              echo "================================================" | tee -a "$LOG_FILE"
+              echo "Running Backtest for $STRATEGY_NAME" | tee -a "$LOG_FILE"
+              echo "Timestamp: $(date)" | tee -a "$LOG_FILE"
+              echo "================================================" | tee -a "$LOG_FILE"
+              echo "" | tee -a "$LOG_FILE"
+
+              # Run backtest (auto-detects timeframe from strategy file)
+              docker run --rm \
+                -v "$(pwd)/user_data:/freqtrade/user_data" \
+                -v "$(pwd)/config_backtest.json:/freqtrade/config_backtest.json" \
+                freqtradeorg/freqtrade:stable \
+                backtesting \
+                --config /freqtrade/config_backtest.json \
+                --strategy $STRATEGY_NAME \
+                --timerange 20250826- 2>&1 | tee -a "$LOG_FILE"
+
+              echo "" | tee -a "$LOG_FILE"
+              echo "================================================" | tee -a "$LOG_FILE"
+              echo "Backtest Complete for $STRATEGY_NAME!" | tee -a "$LOG_FILE"
+              echo "Log saved to: ~/freqtrade_backtest/$LOG_FILE" | tee -a "$LOG_FILE"
+              echo "================================================" | tee -a "$LOG_FILE"
+              echo ""
+            done
+
+            echo ""
+            echo "================================================"
+            echo "All Backtests Complete!"
+            echo "================================================"
             echo ""
             echo "Recent backtest logs:"
-            ls -lt backtest_logs/*.log 2>/dev/null | head -n 5 || echo "No previous logs found"
+            ls -lt backtest_logs/*.log 2>/dev/null | head -n 10 || echo "No logs found"
           ENDSSH
 
       - name: Cleanup
@@ -299,7 +317,7 @@ jobs:
         run: |
           STATUS="${{ job.status }}"
           if [ "$STATUS" = "success" ]; then
-            echo "✅ Backtest completed successfully! Check logs above for results."
+            echo "✅ All backtests completed successfully! Check logs and dashboard."
           else
             echo "❌ Backtest failed!"
           fi
