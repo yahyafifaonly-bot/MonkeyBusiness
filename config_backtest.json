@@ -40,6 +40,7 @@
         "secret": "",
         "ccxt_config": {},
         "ccxt_async_config": {},
+        "fee": 0.001,
         "pair_whitelist": [
             "BTC/USDT",
             "ETH/USDT",

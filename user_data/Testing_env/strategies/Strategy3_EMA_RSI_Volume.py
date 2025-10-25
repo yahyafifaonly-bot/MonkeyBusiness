@@ -1,15 +1,19 @@
 """
-EMA-RSI-Volume Scalper Strategy
+EMA-RSI-Volume Scalper Strategy (Optimized)
 
 Target Metrics:
 - Win rate: ≥ 60%
 - Risk per trade: ≤ 2%
-- Risk:Reward: ≥ 2:1
-- Trade frequency: ~50 trades/day
-- Timeframe: 1 minute
+- Risk:Reward: 2:1
+- Trade frequency: Reduced noise with 5m timeframe
+- Timeframe: 5 minutes
 
 Entry Logic (Long only for spot markets):
-- Long: EMA9 > EMA21, RSI 50-70, Volume > 1.5× average
+- EMA9 > EMA21 > EMA200 (strong trend filter)
+- RSI 50-70 (momentum confirmation)
+- Volume > 1.5× average (volume spike)
+- ADX > 25 (trend strength filter)
+- ATR above minimum threshold (skip low volatility)
 
 Exit Logic:
 - Stop Loss: 1.5× ATR
@@ -18,8 +22,9 @@ Exit Logic:
 - Exit on opposite EMA crossover
 
 Risk Management:
-- Max 3-5 concurrent trades
+- Max 5 concurrent trades
 - Daily max loss: 5%
+- Fee-aware: 0.1% per trade
 """
 
 from freqtrade.strategy import IStrategy, IntParameter, DecimalParameter
@@ -33,8 +38,8 @@ class Strategy3_EMA_RSI_Volume(IStrategy):
     # Strategy metadata
     INTERFACE_VERSION = 3
 
-    # Timeframe
-    timeframe = '1m'
+    # Timeframe - 5m for cleaner signals and reduced noise
+    timeframe = '5m'
 
     # Can short (disable for spot markets)
     can_short = False
@@ -60,8 +65,12 @@ class Strategy3_EMA_RSI_Volume(IStrategy):
     # Position sizing - 2% risk per trade
     stake_amount = 'unlimited'
 
-    # Startup candle count
-    startup_candle_count = 50
+    # Startup candle count - Need 200+ for EMA200
+    startup_candle_count = 210
+
+    # ATR minimum threshold to skip low volatility trades
+    # Will skip trades when ATR is below this percentage of price
+    atr_min_threshold = 0.005  # 0.5% of price
 
     # Protection settings for daily max loss
     @property
@@ -69,9 +78,9 @@ class Strategy3_EMA_RSI_Volume(IStrategy):
         return [
             {
                 "method": "MaxDrawdown",
-                "lookback_period_candles": 1440,  # 24 hours on 1m
+                "lookback_period_candles": 288,  # 24 hours on 5m (24*60/5)
                 "trade_limit": 1,
-                "stop_duration_candles": 1440,  # Stop for 24 hours
+                "stop_duration_candles": 288,  # Stop for 24 hours
                 "max_allowed_drawdown": 0.05  # 5% daily max loss
             }
         ]
@@ -84,9 +93,13 @@ class Strategy3_EMA_RSI_Volume(IStrategy):
         # EMA indicators
         dataframe['ema_9'] = ta.EMA(dataframe, timeperiod=9)
         dataframe['ema_21'] = ta.EMA(dataframe, timeperiod=21)
+        dataframe['ema_200'] = ta.EMA(dataframe, timeperiod=200)  # Long-term trend filter
 
         # RSI
         dataframe['rsi'] = ta.RSI(dataframe, timeperiod=14)
+
+        # ADX for trend strength
+        dataframe['adx'] = ta.ADX(dataframe, timeperiod=14)
 
         # Volume analysis
         dataframe['volume_sma'] = ta.SMA(dataframe['volume'], timeperiod=20)
@@ -95,24 +108,32 @@ class Strategy3_EMA_RSI_Volume(IStrategy):
         # ATR for dynamic stop loss and take profit
         dataframe['atr'] = ta.ATR(dataframe, timeperiod=14)
 
+        # ATR as percentage of price (for volatility filter)
+        dataframe['atr_percent'] = (dataframe['atr'] / dataframe['close']) * 100
+
         # Calculate ATR-based levels for reference
         dataframe['atr_stop_long'] = dataframe['close'] - (1.5 * dataframe['atr'])
-        dataframe['atr_stop_short'] = dataframe['close'] + (1.5 * dataframe['atr'])
         dataframe['atr_target_long'] = dataframe['close'] + (3.0 * dataframe['atr'])
-        dataframe['atr_target_short'] = dataframe['close'] - (3.0 * dataframe['atr'])
 
         return dataframe
 
     def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         """
-        Entry signal logic
+        Entry signal logic with strong trend filters
         """
 
         # Long entry conditions
         dataframe.loc[
             (
-                # EMA trend condition
+                # Step 2: Strong EMA trend filter (EMA9 > EMA21 > EMA200)
                 (dataframe['ema_9'] > dataframe['ema_21']) &
+                (dataframe['ema_21'] > dataframe['ema_200']) &
+
+                # Price above EMA9 for confirmation
+                (dataframe['close'] > dataframe['ema_9']) &
+
+                # ADX trend strength filter (only trade strong trends)
+                (dataframe['adx'] > 25) &
 
                 # RSI momentum condition (50-70 range)
                 (dataframe['rsi'] >= 50) &
@@ -121,8 +142,8 @@ class Strategy3_EMA_RSI_Volume(IStrategy):
                 # Volume spike condition
                 (dataframe['volume_ratio'] > 1.5) &
 
-                # Price above EMA9 for confirmation
-                (dataframe['close'] > dataframe['ema_9']) &
+                # Step 3: Skip low volatility trades (ATR threshold)
+                (dataframe['atr_percent'] >= 0.5) &  # ATR must be >= 0.5% of price
 
                 # Volume must be positive
                 (dataframe['volume'] > 0)
