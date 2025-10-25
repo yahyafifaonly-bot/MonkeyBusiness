@@ -133,7 +133,8 @@ jobs:
             echo ""
             echo "To start the bot, run:"
             echo "  cd ~/freqtrade"
-              docker compose -f docker-compose-production.yml up -d"
+            echo "  docker compose -f docker-compose-production.yml up -d"
+
           ENDSSH
 
       - name: Cleanup
