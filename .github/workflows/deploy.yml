@@ -1,0 +1,151 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'user_data/Testing_env/**'
+      - 'user_data/Production_env/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        type: choice
+        options:
+          - Testing_env
+          - Production_env
+        default: 'Testing_env'
+
+jobs:
+  deploy-testing:
+    name: Deploy to Testing Environment
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'Testing_env')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy Testing_env to VPS
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
+            set -e
+
+            # Create deployment directory
+            mkdir -p ~/freqtrade/Testing_env
+
+            echo "================================================"
+            echo "Deploying Testing_env to VPS"
+            echo "================================================"
+          ENDSSH
+
+          # Copy Testing_env files to VPS
+          scp -i ~/.ssh/deploy_key -r user_data/Testing_env/* ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:~/freqtrade/Testing_env/
+
+          # Run deployment commands on VPS
+          ssh -i ~/.ssh/deploy_key ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
+            cd ~/freqtrade/Testing_env
+
+            echo "Files deployed successfully!"
+            echo "Deployment directory contents:"
+            ls -la
+
+            echo ""
+            echo "================================================"
+            echo "Testing_env Deployment Complete!"
+            echo "================================================"
+            echo ""
+            echo "To start the bot, run:"
+            echo "  cd ~/freqtrade"
+            echo "  docker compose -f docker-compose-testing.yml up -d"
+          ENDSSH
+
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
+
+      - name: Send notification
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          if [ "$STATUS" = "success" ]; then
+            echo "✅ Testing_env deployed successfully!"
+          else
+            echo "❌ Deployment to Testing_env failed!"
+          fi
+
+  deploy-production:
+    name: Deploy to Production Environment
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'Production_env'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy Production_env to VPS
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
+            set -e
+
+            # Create deployment directory
+            mkdir -p ~/freqtrade/Production_env
+
+            echo "================================================"
+            echo "Deploying Production_env to VPS"
+            echo "================================================"
+          ENDSSH
+
+          # Copy Production_env files to VPS
+          scp -i ~/.ssh/deploy_key -r user_data/Production_env/* ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:~/freqtrade/Production_env/
+
+          # Run deployment commands on VPS
+          ssh -i ~/.ssh/deploy_key ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
+            cd ~/freqtrade/Production_env
+
+            echo "Files deployed successfully!"
+            echo "Deployment directory contents:"
+            ls -la
+
+            echo ""
+            echo "================================================"
+            echo "Production_env Deployment Complete!"
+            echo "================================================"
+            echo ""
+            echo "⚠️  PRODUCTION ENVIRONMENT DEPLOYED"
+            echo ""
+            echo "To start the bot, run:"
+            echo "  cd ~/freqtrade"
+              docker compose -f docker-compose-production.yml up -d"
+          ENDSSH
+
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
+
+      - name: Send notification
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          if [ "$STATUS" = "success" ]; then
+            echo "✅ Production_env deployed successfully!"
+          else
+            echo "❌ Deployment to Production_env failed!"
+          fi
