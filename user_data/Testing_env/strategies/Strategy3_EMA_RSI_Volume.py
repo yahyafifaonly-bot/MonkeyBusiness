@@ -8,9 +8,8 @@ Target Metrics:
 - Trade frequency: ~50 trades/day
 - Timeframe: 1 minute
 
-Entry Logic:
+Entry Logic (Long only for spot markets):
 - Long: EMA9 > EMA21, RSI 50-70, Volume > 1.5× average
-- Short: EMA9 < EMA21, RSI 30-50, Volume > 1.5× average
 
 Exit Logic:
 - Stop Loss: 1.5× ATR
@@ -37,8 +36,8 @@ class Strategy3_EMA_RSI_Volume(IStrategy):
     # Timeframe
     timeframe = '1m'
 
-    # Can short (enable short positions)
-    can_short = True
+    # Can short (disable for spot markets)
+    can_short = False
 
     # ROI table - Take profit at 6% (3× the 2% risk = 2:1 R:R)
     # With dynamic ATR-based exits, this acts as a safety net
@@ -130,26 +129,17 @@ class Strategy3_EMA_RSI_Volume(IStrategy):
             ),
             'enter_long'] = 1
 
-        # Short entry conditions
-        dataframe.loc[
-            (
-                # EMA trend condition
-                (dataframe['ema_9'] < dataframe['ema_21']) &
-
-                # RSI momentum condition (30-50 range)
-                (dataframe['rsi'] >= 30) &
-                (dataframe['rsi'] <= 50) &
-
-                # Volume spike condition
-                (dataframe['volume_ratio'] > 1.5) &
-
-                # Price below EMA9 for confirmation
-                (dataframe['close'] < dataframe['ema_9']) &
-
-                # Volume must be positive
-                (dataframe['volume'] > 0)
-            ),
-            'enter_short'] = 1
+        # Short entry disabled (spot market only - can_short=False)
+        # dataframe.loc[
+        #     (
+        #         (dataframe['ema_9'] < dataframe['ema_21']) &
+        #         (dataframe['rsi'] >= 30) &
+        #         (dataframe['rsi'] <= 50) &
+        #         (dataframe['volume_ratio'] > 1.5) &
+        #         (dataframe['close'] < dataframe['ema_9']) &
+        #         (dataframe['volume'] > 0)
+        #     ),
+        #     'enter_short'] = 1
 
         return dataframe
 
@@ -166,20 +156,20 @@ class Strategy3_EMA_RSI_Volume(IStrategy):
             ),
             'exit_long'] = 1
 
-        # Exit short on bullish EMA crossover
-        dataframe.loc[
-            (
-                (dataframe['ema_9'] > dataframe['ema_21']) &
-                (dataframe['ema_9'].shift(1) <= dataframe['ema_21'].shift(1))
-            ),
-            'exit_short'] = 1
+        # Exit short disabled (spot market only - can_short=False)
+        # dataframe.loc[
+        #     (
+        #         (dataframe['ema_9'] > dataframe['ema_21']) &
+        #         (dataframe['ema_9'].shift(1) <= dataframe['ema_21'].shift(1))
+        #     ),
+        #     'exit_short'] = 1
 
         return dataframe
 
     def custom_stoploss(self, pair: str, trade: 'Trade', current_time: 'datetime',
                         current_rate: float, current_profit: float, **kwargs) -> float:
         """
-        Dynamic stop loss based on ATR (1.5× ATR)
+        Dynamic stop loss based on ATR (1.5× ATR) - Long positions only
         """
         dataframe, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
         last_candle = dataframe.iloc[-1].squeeze()
@@ -187,21 +177,14 @@ class Strategy3_EMA_RSI_Volume(IStrategy):
         # Get ATR value
         atr = last_candle['atr']
 
-        if trade.is_short:
-            # For short positions
-            # Stop loss is 1.5× ATR above entry
-            stop_distance = (1.5 * atr) / trade.open_rate
-            return -stop_distance
-        else:
-            # For long positions
-            # Stop loss is 1.5× ATR below entry
-            stop_distance = (1.5 * atr) / trade.open_rate
-            return -stop_distance
+        # For long positions - Stop loss is 1.5× ATR below entry
+        stop_distance = (1.5 * atr) / trade.open_rate
+        return -stop_distance
 
     def custom_exit(self, pair: str, trade: 'Trade', current_time: 'datetime',
                     current_rate: float, current_profit: float, **kwargs) -> 'Optional[Union[str, bool]]':
         """
-        Dynamic take profit based on ATR (3× ATR for 2:1 R:R)
+        Dynamic take profit based on ATR (3× ATR for 2:1 R:R) - Long positions only
         """
         dataframe, _ = self.dp.get_analyzed_dataframe(pair, self.timeframe)
         last_candle = dataframe.iloc[-1].squeeze()
@@ -209,16 +192,10 @@ class Strategy3_EMA_RSI_Volume(IStrategy):
         # Get ATR value
         atr = last_candle['atr']
 
-        if trade.is_short:
-            # For short positions - take profit when price drops 3× ATR
-            target_profit_pct = (3.0 * atr) / trade.open_rate
-            if current_profit >= target_profit_pct:
-                return 'atr_target_short'
-        else:
-            # For long positions - take profit when price rises 3× ATR
-            target_profit_pct = (3.0 * atr) / trade.open_rate
-            if current_profit >= target_profit_pct:
-                return 'atr_target_long'
+        # For long positions - take profit when price rises 3× ATR
+        target_profit_pct = (3.0 * atr) / trade.open_rate
+        if current_profit >= target_profit_pct:
+            return 'atr_target_long'
 
         return None
 
