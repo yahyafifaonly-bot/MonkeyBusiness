@@ -224,37 +224,31 @@ jobs:
 
             echo ""
             echo "================================================"
-            echo "Checking for existing backtest data..."
+            echo "Downloading/Refreshing backtest data..."
             echo "================================================"
 
-            # Download data for multiple timeframes (1m and 5m)
-            if [ ! -d "user_data/data/binance" ] || [ -z "$(ls -A user_data/data/binance 2>/dev/null)" ]; then
-              echo "Downloading historical data for backtest..."
-              docker run --rm \
-                -v "$(pwd)/user_data:/freqtrade/user_data" \
-                -v "$(pwd)/config_backtest.json:/freqtrade/config_backtest.json" \
-                freqtradeorg/freqtrade:stable \
-                download-data \
-                --exchange binance \
-                --config /freqtrade/config_backtest.json \
-                --timeframes 1m 5m \
-                --days 60 \
-                --data-format-ohlcv json \
-                --trading-mode spot
-            else
-              echo "Data already exists. Refreshing latest data..."
-              docker run --rm \
-                -v "$(pwd)/user_data:/freqtrade/user_data" \
-                -v "$(pwd)/config_backtest.json:/freqtrade/config_backtest.json" \
-                freqtradeorg/freqtrade:stable \
-                download-data \
-                --exchange binance \
-                --config /freqtrade/config_backtest.json \
-                --timeframes 1m 5m \
-                --days 3 \
-                --data-format-ohlcv json \
-                --trading-mode spot
-            fi
+            # Download 1m data
+            echo "Downloading 1m timeframe data..."
+            docker run --rm \
+              -v "$(pwd)/user_data:/freqtrade/user_data" \
+              freqtradeorg/freqtrade:stable \
+              download-data \
+              --exchange binance \
+              --timeframe 1m \
+              --days 60 \
+              --pairs BTC/USDT ETH/USDT SOL/USDT XRP/USDT ADA/USDT DOGE/USDT DOT/USDT AVAX/USDT
+
+            # Download 5m data
+            echo ""
+            echo "Downloading 5m timeframe data..."
+            docker run --rm \
+              -v "$(pwd)/user_data:/freqtrade/user_data" \
+              freqtradeorg/freqtrade:stable \
+              download-data \
+              --exchange binance \
+              --timeframe 5m \
+              --days 60 \
+              --pairs BTC/USDT ETH/USDT SOL/USDT XRP/USDT ADA/USDT DOGE/USDT DOT/USDT AVAX/USDT
 
             echo ""
             echo "================================================"
@@ -289,8 +283,7 @@ jobs:
                   freqtradeorg/freqtrade:stable \
                   backtesting \
                   --config /freqtrade/config_backtest.json \
-                  --strategy $STRATEGY_NAME \
-                  --timerange 20250826-
+                  --strategy $STRATEGY_NAME
 
                 echo ""
                 echo "================================================"
