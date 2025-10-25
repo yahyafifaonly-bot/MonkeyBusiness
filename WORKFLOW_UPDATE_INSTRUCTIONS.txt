@@ -1,0 +1,21 @@
+========================================
+UPDATE WORKFLOW TO ENABLE BACKTEST
+========================================
+
+The backtest job didn't run because of a condition issue.
+
+UPDATED FILE: UPDATED_DEPLOY_WORKFLOW_v2.yml
+
+TO FIX:
+1. Go to: https://github.com/yahyafifaonly-bot/MonkeyBusiness/blob/main/.github/workflows/deploy.yml
+2. Click the pencil icon to edit
+3. Copy the entire content from UPDATED_DEPLOY_WORKFLOW_v2.yml
+4. Paste it into the GitHub editor (replace everything)
+5. Commit the changes
+
+WHAT CHANGED:
+Line 190: Simplified the backtest trigger condition
+Now it will run backtest on EVERY push to main (whenever strategies change)
+
+After you update, push any change to Strategy1_EMA_RSI.py and the backtest will run automatically.
+========================================
