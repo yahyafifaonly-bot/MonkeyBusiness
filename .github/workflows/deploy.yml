@@ -268,7 +268,7 @@ jobs:
               --config /freqtrade/config_backtest.json \
               --strategy Strategy1_EMA_RSI \
               --timeframe 1m \
-              --timerange 20241001-
+              --timerange 20250826-
 
             echo ""
             echo "================================================"
