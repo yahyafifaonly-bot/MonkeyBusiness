@@ -1,0 +1,381 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'user_data/Testing_env/**'
+      - 'user_data/Production_env/**'
+      - 'docker-compose-testing.yml'
+      - 'docker-compose-production.yml'
+      - 'docker-compose-dashboard.yml'
+      - 'backtest_dashboard/**'
+      - 'config_backtest.json'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        type: choice
+        options:
+          - Testing_env
+          - Production_env
+        default: 'Testing_env'
+
+jobs:
+  deploy-testing:
+    name: Deploy to Testing Environment
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'Testing_env')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy Testing_env to VPS
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
+            set -e
+
+            # Create deployment directory
+            mkdir -p ~/freqtrade/Testing_env
+
+            echo "================================================"
+            echo "Deploying Testing_env to VPS"
+            echo "================================================"
+          ENDSSH
+
+          # Copy docker-compose file to VPS
+          scp -i ~/.ssh/deploy_key docker-compose-testing.yml ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:~/freqtrade/
+
+          # Copy Testing_env files to VPS
+          scp -i ~/.ssh/deploy_key -r user_data/Testing_env/* ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:~/freqtrade/Testing_env/
+
+          # Run deployment commands on VPS
+          ssh -i ~/.ssh/deploy_key ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
+            cd ~/freqtrade
+
+            echo "Files deployed successfully!"
+            echo "Deployment directory contents:"
+            ls -la Testing_env/
+
+            echo ""
+            echo "Restarting containers with new configuration..."
+            docker compose -f docker-compose-testing.yml down
+            docker compose -f docker-compose-testing.yml up -d
+
+            echo ""
+            echo "Checking container status..."
+            docker ps | grep freqtrade_testing || docker ps
+
+            echo ""
+            echo "================================================"
+            echo "Testing_env Deployment Complete!"
+            echo "================================================"
+            echo ""
+            echo "Access your bots at:"
+            echo "  http://72.61.162.23:8081 - Strategy1"
+            echo "  http://72.61.162.23:8082 - Strategy2"
+            echo "  http://72.61.162.23:8083 - Strategy3"
+            echo "  http://72.61.162.23:8084 - Strategy4"
+            echo "  http://72.61.162.23:8085 - Strategy5"
+          ENDSSH
+
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
+
+      - name: Send notification
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          if [ "$STATUS" = "success" ]; then
+            echo "✅ Testing_env deployed successfully!"
+          else
+            echo "❌ Deployment to Testing_env failed!"
+          fi
+
+  deploy-production:
+    name: Deploy to Production Environment
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'Production_env'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy Production_env to VPS
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
+            set -e
+
+            # Create deployment directory
+            mkdir -p ~/freqtrade/Production_env
+
+            echo "================================================"
+            echo "Deploying Production_env to VPS"
+            echo "================================================"
+          ENDSSH
+
+          # Copy docker-compose file to VPS
+          scp -i ~/.ssh/deploy_key docker-compose-production.yml ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:~/freqtrade/
+
+          # Copy Production_env files to VPS
+          scp -i ~/.ssh/deploy_key -r user_data/Production_env/* ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:~/freqtrade/Production_env/
+
+          # Run deployment commands on VPS
+          ssh -i ~/.ssh/deploy_key ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
+            cd ~/freqtrade
+
+            echo "Files deployed successfully!"
+            echo "Deployment directory contents:"
+            ls -la Production_env/
+
+            echo ""
+            echo "⚠️  RESTARTING PRODUCTION CONTAINERS ⚠️"
+            docker compose -f docker-compose-production.yml down
+            docker compose -f docker-compose-production.yml up -d
+
+            echo ""
+            echo "Checking container status..."
+            docker ps | grep freqtrade_production || docker ps
+
+            echo ""
+            echo "================================================"
+            echo "Production_env Deployment Complete!"
+            echo "================================================"
+            echo ""
+            echo "⚠️  PRODUCTION ENVIRONMENT DEPLOYED"
+            echo ""
+            echo "Access your bots at:"
+            echo "  http://72.61.162.23:8086 - Strategy1"
+            echo "  http://72.61.162.23:8087 - Strategy2"
+            echo "  http://72.61.162.23:8088 - Strategy3"
+            echo "  http://72.61.162.23:8089 - Strategy4"
+            echo "  http://72.61.162.23:8090 - Strategy5"
+
+          ENDSSH
+
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
+
+      - name: Send notification
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          if [ "$STATUS" = "success" ]; then
+            echo "✅ Production_env deployed successfully!"
+          else
+            echo "❌ Deployment to Production_env failed!"
+          fi
+
+  backtest-all-strategies:
+    name: Backtest All Strategies
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy Backtest Files and Run All Backtests
+        run: |
+          # Create backtest directory on VPS
+          ssh -i ~/.ssh/deploy_key ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
+            mkdir -p ~/freqtrade_backtest/user_data/strategies
+            mkdir -p ~/freqtrade_backtest/backtest_logs
+            echo "================================================"
+            echo "Setting up Backtest Environment"
+            echo "================================================"
+          ENDSSH
+
+          # Copy backtest config
+          scp -i ~/.ssh/deploy_key config_backtest.json ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:~/freqtrade_backtest/
+
+          # Copy ALL strategies from Testing_env
+          scp -i ~/.ssh/deploy_key user_data/Testing_env/strategies/*.py ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:~/freqtrade_backtest/user_data/strategies/
+
+          # Run backtest for ALL strategies on VPS
+          ssh -i ~/.ssh/deploy_key ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
+            cd ~/freqtrade_backtest
+
+            echo ""
+            echo "================================================"
+            echo "Downloading/Refreshing backtest data..."
+            echo "================================================"
+
+            # Download 1m data
+            echo "Downloading 1m timeframe data..."
+            docker run --rm \
+              -v "$(pwd)/user_data:/freqtrade/user_data" \
+              freqtradeorg/freqtrade:stable \
+              download-data \
+              --exchange binance \
+              --timeframe 1m \
+              --days 60 \
+              --pairs BTC/USDT ETH/USDT SOL/USDT XRP/USDT ADA/USDT DOGE/USDT DOT/USDT AVAX/USDT
+
+            # Download 5m data
+            echo ""
+            echo "Downloading 5m timeframe data..."
+            docker run --rm \
+              -v "$(pwd)/user_data:/freqtrade/user_data" \
+              freqtradeorg/freqtrade:stable \
+              download-data \
+              --exchange binance \
+              --timeframe 5m \
+              --days 60 \
+              --pairs BTC/USDT ETH/USDT SOL/USDT XRP/USDT ADA/USDT DOGE/USDT DOT/USDT AVAX/USDT
+
+            echo ""
+            echo "================================================"
+            echo "Running Backtests for All Strategies"
+            echo "================================================"
+            echo ""
+
+            # Loop through all strategy files
+            for strategy_file in user_data/strategies/*.py; do
+              # Extract strategy name (without .py extension)
+              STRATEGY_NAME=$(basename "$strategy_file" .py)
+
+              echo "------------------------------------------------"
+              echo "Backtesting: $STRATEGY_NAME"
+              echo "------------------------------------------------"
+
+              # Create timestamped log file for this strategy
+              LOG_FILE="backtest_logs/backtest_${STRATEGY_NAME}_$(date +%Y%m%d_%H%M%S).log"
+
+              {
+                echo ""
+                echo "================================================"
+                echo "Running Backtest for $STRATEGY_NAME"
+                echo "Timestamp: $(date)"
+                echo "================================================"
+                echo ""
+
+                # Run backtest (auto-detects timeframe from strategy file)
+                docker run --rm \
+                  -v "$(pwd)/user_data:/freqtrade/user_data" \
+                  -v "$(pwd)/config_backtest.json:/freqtrade/config_backtest.json" \
+                  freqtradeorg/freqtrade:stable \
+                  backtesting \
+                  --config /freqtrade/config_backtest.json \
+                  --strategy $STRATEGY_NAME
+
+                echo ""
+                echo "================================================"
+                echo "Backtest Complete for $STRATEGY_NAME!"
+                echo "Log saved to: ~/freqtrade_backtest/$LOG_FILE"
+                echo "================================================"
+              } 2>&1 | tee -a "$LOG_FILE"
+
+              echo ""
+            done
+
+            echo ""
+            echo "================================================"
+            echo "All Backtests Complete!"
+            echo "================================================"
+            echo ""
+            echo "Recent backtest logs:"
+            ls -lt backtest_logs/*.log 2>/dev/null | head -n 10 || echo "No logs found"
+          ENDSSH
+
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
+
+      - name: Send notification
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          if [ "$STATUS" = "success" ]; then
+            echo "✅ All backtests completed successfully! Check logs and dashboard."
+          else
+            echo "❌ Backtest failed!"
+          fi
+
+  deploy-dashboard:
+    name: Deploy Backtest Dashboard
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy Dashboard to VPS
+        run: |
+          # Copy dashboard files to VPS
+          scp -i ~/.ssh/deploy_key -r backtest_dashboard ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:~/
+          scp -i ~/.ssh/deploy_key docker-compose-dashboard.yml ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:~/
+
+          # Deploy dashboard on VPS
+          ssh -i ~/.ssh/deploy_key ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
+            cd ~
+
+            echo "================================================"
+            echo "Deploying Backtest Dashboard"
+            echo "================================================"
+
+            # Stop existing dashboard if running
+            docker compose -f docker-compose-dashboard.yml down 2>/dev/null || true
+
+            # Build and start dashboard
+            docker compose -f docker-compose-dashboard.yml up -d --build
+
+            echo ""
+            echo "Checking dashboard status..."
+            docker ps | grep backtest_dashboard || echo "Dashboard container not found"
+
+            echo ""
+            echo "================================================"
+            echo "Dashboard Deployment Complete!"
+            echo "================================================"
+            echo ""
+            echo "Access your dashboard at:"
+            echo "  http://72.61.162.23:8091"
+          ENDSSH
+
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
+
+      - name: Send notification
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          if [ "$STATUS" = "success" ]; then
+            echo "✅ Dashboard deployed successfully! Visit http://72.61.162.23:8091"
+          else
+            echo "❌ Dashboard deployment failed!"
+          fi
