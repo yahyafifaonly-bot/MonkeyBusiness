@@ -187,8 +187,7 @@ jobs:
   backtest-strategy1:
     name: Backtest Strategy1_EMA_RSI
     runs-on: ubuntu-latest
-  if: github.event_name == 'push'
-
+    if: github.event_name == 'push'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
