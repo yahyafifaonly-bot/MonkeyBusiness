@@ -1,19 +1,21 @@
 """
-Strategy 1: EMA + RSI Pullback Buy
+Strategy 1: EMA + RSI Pullback Buy (Relaxed Version)
 Port: 8085
 
-Entry Conditions:
+Entry Conditions (RELAXED):
 - Price > 9 EMA > 20 EMA (uptrend)
-- RSI crosses above 50
-- Price near 9 EMA (within 0.2%)
-- 3 consecutive green candles above 9 EMA
-- Volume > previous 3-bar average
+- RSI > 40 (relaxed from crossing 50)
+- Price near 9 EMA (within 1% - relaxed from 0.2%)
+- 2 consecutive green candles above 9 EMA (relaxed from 3)
+- No 3 consecutive red candles below EMA (safety check)
 
 Risk Management:
 - Risk: 2% per trade
-- Stop Loss: 1-1.5% below entry
+- Stop Loss: 1.5% below entry
 - Take Profit: 2-3% above entry
 - R:R Ratio: ~2:1
+
+Last Updated: 2025-10-25 - Relaxed entry conditions for more trades
 """
 
 from freqtrade.strategy import IStrategy
