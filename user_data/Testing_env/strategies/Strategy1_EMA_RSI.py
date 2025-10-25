@@ -51,8 +51,8 @@ class Strategy1_EMA_RSI(IStrategy):
     process_only_new_candles = True
     use_exit_signal = True
 
-    # EMA distance threshold
-    max_ema_distance_pct = 1.0  # 1% max distance from 9 EMA (relaxed)
+    # EMA distance threshold (relaxed for more trade opportunities)
+    max_ema_distance_pct = 1.0  # 1% max distance from 9 EMA
 
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         """Calculate indicators"""
