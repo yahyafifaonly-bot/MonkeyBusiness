@@ -1,23 +1,31 @@
 """
-Strategy 1: EMA + RSI Pullback Buy (Relaxed Version)
+Strategy 1: EMA + RSI Pullback Buy (IMPROVED VERSION)
 Port: 8085
 
-Entry Conditions (RELAXED):
+BACKTEST RESULTS (Relaxed): -89.9% loss, 9.7% win rate, 4395 trades
+IMPROVEMENTS APPLIED: Tightened entry conditions for better quality trades
+
+Entry Conditions (IMPROVED):
 - Price > 9 EMA > 20 EMA (uptrend)
-- RSI > 40 (relaxed from crossing 50)
-- Price near 9 EMA (within 1% - relaxed from 0.2%)
-- 2 consecutive green candles above 9 EMA (relaxed from 3)
+- RSI > 50 AND rising (IMPROVED: was >40)
+- Price near 9 EMA (within 0.4% - IMPROVED: was 1%)
+- 3 consecutive green candles above 9 EMA (IMPROVED: was 2)
 - No 3 consecutive red candles below EMA (safety check)
+- Volume confirmation added
 
 Risk Management:
 - Risk: 2% per trade
-- Stop Loss: 1.5% below entry
-- Take Profit: 2-3% above entry
-- R:R Ratio: ~2:1
+- Stop Loss: 2% below entry (IMPROVED: was 1.5% - less premature exits)
+- Take Profit: 2.5-3% above entry
+- R:R Ratio: ~1.5:1
 
-Last Updated: 2025-10-25 - Relaxed entry conditions for more trades
+Expected Improvements:
+- Higher win rate (targeting 30-40% vs 9.7%)
+- Fewer trades (targeting 50-100/day vs 146/day)
+- Positive expectancy
+
+Last Updated: 2025-10-25 - Improved parameters based on backtest analysis
 Auto-backtest enabled - Results shown in GitHub Actions logs
-Backtest Period: August 26 - October 25, 2025 (60 days)
 """
 
 from freqtrade.strategy import IStrategy
@@ -33,14 +41,14 @@ class Strategy1_EMA_RSI(IStrategy):
     timeframe = '5m'
     can_short = False
 
-    # Risk management (2% risk, 1.5% SL, 3% TP = 2:1 R:R)
+    # Risk management (2% risk, 2% SL, 3% TP = 1.5:1 R:R)
     minimal_roi = {
-        "0": 0.03,  # 3% take profit
-        "15": 0.025,  # 2.5% after 15 min
-        "30": 0.02   # 2% after 30 min
+        "0": 0.03,    # 3% take profit
+        "20": 0.025,  # 2.5% after 20 min
+        "40": 0.02    # 2% after 40 min
     }
 
-    stoploss = -0.015  # -1.5% stop loss
+    stoploss = -0.02  # -2% stop loss (reduced premature exits)
 
     # Trailing stop
     trailing_stop = True
@@ -53,8 +61,8 @@ class Strategy1_EMA_RSI(IStrategy):
     process_only_new_candles = True
     use_exit_signal = True
 
-    # EMA distance threshold (relaxed for more trade opportunities)
-    max_ema_distance_pct = 1.0  # 1% max distance from 9 EMA
+    # EMA distance threshold (tightened for better quality signals)
+    max_ema_distance_pct = 0.4  # 0.4% max distance from 9 EMA (IMPROVED: was 1%)
 
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
         """Calculate indicators"""
@@ -68,6 +76,7 @@ class Strategy1_EMA_RSI(IStrategy):
 
         # Volume
         dataframe['volume_sma_3'] = ta.SMA(dataframe['volume'], timeperiod=3)
+        dataframe['volume_ratio'] = dataframe['volume'] / dataframe['volume_sma_3']
 
         # EMA slopes and distances
         dataframe['ema9_slope'] = dataframe['ema_9'].pct_change(3) * 100
@@ -79,13 +88,13 @@ class Strategy1_EMA_RSI(IStrategy):
         dataframe['close_above_ema9'] = (dataframe['close'] > dataframe['ema_9']).astype(int)
         dataframe['close_below_ema9'] = (dataframe['close'] < dataframe['ema_9']).astype(int)
 
-        # Consecutive green candles above EMA9
+        # Consecutive green candles above EMA9 (IMPROVED: 3 candles instead of 2)
         dataframe['green_above_ema9_count'] = 0
-        for i in range(2, len(dataframe)):
+        for i in range(3, len(dataframe)):
             if all(dataframe['is_green'].iloc[i-j] == 1 and
                    dataframe['close_above_ema9'].iloc[i-j] == 1
-                   for j in range(2)):
-                dataframe.loc[dataframe.index[i], 'green_above_ema9_count'] = 2
+                   for j in range(3)):
+                dataframe.loc[dataframe.index[i], 'green_above_ema9_count'] = 3
 
         # Consecutive red candles below EMA9 (disable signal)
         dataframe['red_below_ema9_count'] = 0
@@ -101,7 +110,7 @@ class Strategy1_EMA_RSI(IStrategy):
         return dataframe
 
     def populate_entry_trend(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
-        """Entry conditions"""
+        """Entry conditions - IMPROVED from relaxed version"""
 
         dataframe.loc[
             (
@@ -109,20 +118,18 @@ class Strategy1_EMA_RSI(IStrategy):
                 (dataframe['close'] > dataframe['ema_9']) &
                 (dataframe['ema_9'] > dataframe['ema_20']) &
 
-                # 9 EMA trending up
-                (dataframe['ema9_slope'] > 0) &
+                # 9 EMA trending up (IMPROVED: stronger requirement)
+                (dataframe['ema9_slope'] > 0.05) &
 
-                # Price near 9 EMA (within 1% - relaxed)
+                # Price VERY near 9 EMA (IMPROVED: within 0.4% vs 1%)
                 (abs(dataframe['distance_to_ema9']) <= self.max_ema_distance_pct) &
 
-                # RSI > 40 (relaxed from crossing 50)
-                (dataframe['rsi'] > 40) &
-
-                # RSI rising
+                # RSI > 50 AND rising (IMPROVED: was >40)
+                (dataframe['rsi'] > 50) &
                 (dataframe['rsi_rising'] == 1) &
 
-                # 2 consecutive green candles above 9 EMA (relaxed from 3)
-                (dataframe['green_above_ema9_count'] >= 2) &
+                # 3 consecutive green candles above 9 EMA (IMPROVED: was 2)
+                (dataframe['green_above_ema9_count'] >= 3) &
 
                 # No 3 consecutive red candles below EMA recently
                 (dataframe['red_below_ema9_count'].rolling(10).sum() == 0) &
@@ -130,7 +137,8 @@ class Strategy1_EMA_RSI(IStrategy):
                 # Green candle with upward momentum
                 (dataframe['close'] > dataframe['open']) &
 
-                # Volume > 0
+                # Volume confirmation (IMPROVED: added volume ratio check)
+                (dataframe['volume_ratio'] > 1.0) &
                 (dataframe['volume'] > 0)
             ),
             'enter_long'
@@ -144,10 +152,10 @@ class Strategy1_EMA_RSI(IStrategy):
         dataframe.loc[
             (
                 # Exit if RSI drops significantly
-                (dataframe['rsi'] < 40) |
+                (dataframe['rsi'] < 45) |
 
-                # Exit if price crosses below 9 EMA
-                (dataframe['close'] < dataframe['ema_9'])
+                # Exit if price crosses below 9 EMA with bearish candle
+                ((dataframe['close'] < dataframe['ema_9']) & (dataframe['close'] < dataframe['open']))
             ),
             'exit_long'
         ] = 1
