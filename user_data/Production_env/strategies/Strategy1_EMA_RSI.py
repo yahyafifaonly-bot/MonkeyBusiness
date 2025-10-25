@@ -16,7 +16,7 @@ Risk Management:
 - R:R Ratio: ~2:1
 
 Last Updated: 2025-10-25 - Relaxed entry conditions for more trades
-Auto-backtest enabled - Check GitHub Actions for results
+Auto-backtest enabled - Results shown in GitHub Actions logs
 """
 
 from freqtrade.strategy import IStrategy
