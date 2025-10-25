@@ -187,7 +187,7 @@ jobs:
   backtest-strategy1:
     name: Backtest Strategy1_EMA_RSI
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && contains(github.event.head_commit.modified, 'Strategy1_EMA_RSI.py')
+  if: github.event_name == 'push'
 
     steps:
       - name: Checkout code
