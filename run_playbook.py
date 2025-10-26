@@ -28,6 +28,24 @@ VARIANTS = [f"v{i}" for i in range(1, 11)]
 os.makedirs(RESULTS_DIR, exist_ok=True)
 
 
+def is_docker_available():
+    """Check if Docker is available"""
+    try:
+        result = subprocess.run(["docker", "--version"], capture_output=True, text=True)
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
+def is_freqtrade_command_available():
+    """Check if freqtrade command is available"""
+    try:
+        result = subprocess.run(["freqtrade", "--version"], capture_output=True, text=True)
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
 def run_variant(variant: str):
     """Run backtest for a single variant"""
     print(f"\n{'='*60}")
@@ -37,13 +55,39 @@ def run_variant(variant: str):
     # Freqtrade exports to user_data/backtest_results/
     export_dir = os.path.join(USER_DATA, "backtest_results")
 
-    cmd = [
-        "freqtrade", "backtesting",
-        "--config", CONFIG,
-        "--strategy", STRATEGY,
-        "--strategy-params", json.dumps({"variant": variant}),
-        "--export", "trades",
-    ]
+    # Determine if we should use Docker or direct command
+    use_docker = False
+    if not is_freqtrade_command_available():
+        if is_docker_available():
+            use_docker = True
+            print("Using Docker to run freqtrade...")
+        else:
+            print("ERROR: Neither freqtrade command nor Docker is available!")
+            return False
+
+    if use_docker:
+        # Docker command (like in GitHub Actions workflow)
+        pwd = os.getcwd()
+        cmd = [
+            "docker", "run", "--rm",
+            "-v", f"{pwd}/user_data:/freqtrade/user_data",
+            "-v", f"{pwd}/{CONFIG}:/freqtrade/{CONFIG}",
+            "freqtradeorg/freqtrade:stable",
+            "backtesting",
+            "--config", f"/freqtrade/{CONFIG}",
+            "--strategy", STRATEGY,
+            "--strategy-params", json.dumps({"variant": variant}),
+            "--export", "trades",
+        ]
+    else:
+        # Direct freqtrade command
+        cmd = [
+            "freqtrade", "backtesting",
+            "--config", CONFIG,
+            "--strategy", STRATEGY,
+            "--strategy-params", json.dumps({"variant": variant}),
+            "--export", "trades",
+        ]
 
     print("Command:", " ".join(cmd))
     print()
@@ -224,13 +268,24 @@ def main():
     print(f"Results will be saved to: {RESULTS_DIR}")
     print()
 
-    # Check if freqtrade is available
-    try:
-        result = subprocess.run(["freqtrade", "--version"], capture_output=True, text=True)
-        print(f"Freqtrade version: {result.stdout.strip()}\n")
-    except Exception as e:
-        print(f"ERROR: Cannot run freqtrade command: {e}")
-        print("Make sure freqtrade is installed and in your PATH")
+    # Check if freqtrade or Docker is available
+    if is_freqtrade_command_available():
+        try:
+            result = subprocess.run(["freqtrade", "--version"], capture_output=True, text=True)
+            print(f"Using freqtrade command")
+            print(f"Freqtrade version: {result.stdout.strip()}\n")
+        except Exception:
+            pass
+    elif is_docker_available():
+        try:
+            result = subprocess.run(["docker", "--version"], capture_output=True, text=True)
+            print(f"Using Docker to run freqtrade")
+            print(f"Docker version: {result.stdout.strip()}\n")
+        except Exception:
+            pass
+    else:
+        print(f"ERROR: Neither freqtrade command nor Docker is available!")
+        print("Please install freqtrade or Docker to run backtests")
         sys.exit(1)
 
     # Run all variants
