@@ -77,8 +77,14 @@ class EMAPlaybookStrategy(IStrategy):
         if v is None:
             # Freqtrade adds strategy -> config dict under self.config
             cfg = getattr(self, "config", {}) or {}
-            scfg = cfg.get("strategy", {}) or {}
-            v = scfg.get("variant", "v1")
+            scfg = cfg.get("strategy", {})
+            # scfg might be a string (strategy name) or dict (strategy config)
+            if isinstance(scfg, dict):
+                v = scfg.get("variant", "v1")
+            else:
+                v = "v1"
+        if v is None:
+            v = "v1"
         v = str(v).lower().strip()
         if v.startswith("v"):
             return v
@@ -114,14 +120,14 @@ class EMAPlaybookStrategy(IStrategy):
         # Set date as index for resampling
         df_indexed = df.set_index('date')
 
-        df15 = df_indexed.resample("15T", label="right", closed="right").agg(
+        df15 = df_indexed.resample("15min", label="right", closed="right").agg(
             {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}
         ).dropna()
         df15["ema9_15"] = df15["close"].ewm(span=9, adjust=False).mean()
         df15["ema21_15"] = df15["close"].ewm(span=21, adjust=False).mean()
         df15 = df15[["ema9_15", "ema21_15"]].reindex(df_indexed.index, method="ffill")
 
-        df1h = df_indexed.resample("1H", label="right", closed="right").agg(
+        df1h = df_indexed.resample("1h", label="right", closed="right").agg(
             {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}
         ).dropna()
         df1h["ema9_1h"] = df1h["close"].ewm(span=9, adjust=False).mean()
