@@ -252,6 +252,15 @@ jobs:
 
             echo ""
             echo "================================================"
+            echo "Cleaning up old backtest logs..."
+            echo "================================================"
+
+            # Remove all old backtest logs
+            rm -f backtest_logs/*.log
+            echo "Old logs removed. Fresh backtest run starting..."
+
+            echo ""
+            echo "================================================"
             echo "Running Backtests for All Strategies"
             echo "================================================"
             echo ""
@@ -300,8 +309,8 @@ jobs:
             echo "All Backtests Complete!"
             echo "================================================"
             echo ""
-            echo "Recent backtest logs:"
-            ls -lt backtest_logs/*.log 2>/dev/null | head -n 10 || echo "No logs found"
+            echo "Latest backtest logs (current run):"
+            ls -lt backtest_logs/*.log 2>/dev/null || echo "No logs found"
           ENDSSH
 
       - name: Cleanup
