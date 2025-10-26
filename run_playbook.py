@@ -13,15 +13,15 @@ import subprocess
 import sys
 import os
 import csv
+import re
 from datetime import datetime
+from pathlib import Path
 
-# Adjust these
+# Configuration
 CONFIG = "config_backtest.json"
 STRATEGY = "EMAPlaybookStrategy"
 RESULTS_DIR = "playbook_results"
-EXPORT_TRADES = os.path.join(RESULTS_DIR, "trades_{variant}.json")
-EXPORT_SUMMARY = os.path.join(RESULTS_DIR, "summary_{variant}.json")
-FINAL_CSV = os.path.join(RESULTS_DIR, "playbook_summary.csv")
+USER_DATA = "user_data"
 
 VARIANTS = [f"v{i}" for i in range(1, 11)]
 
@@ -34,7 +34,8 @@ def run_variant(variant: str):
     print(f"Running backtest for {variant}")
     print(f"{'='*60}")
 
-    trades_file = EXPORT_TRADES.format(variant=variant)
+    # Freqtrade exports to user_data/backtest_results/
+    export_dir = os.path.join(USER_DATA, "backtest_results")
 
     cmd = [
         "freqtrade", "backtesting",
@@ -42,28 +43,72 @@ def run_variant(variant: str):
         "--strategy", STRATEGY,
         "--strategy-params", json.dumps({"variant": variant}),
         "--export", "trades",
-        "--export-filename", trades_file,
     ]
 
     print("Command:", " ".join(cmd))
     print()
 
     try:
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-        print(result.stdout)
+        result = subprocess.run(cmd, check=False, capture_output=True, text=True)
+
+        # Always print output for debugging
+        if result.stdout:
+            print(result.stdout)
         if result.stderr:
             print("STDERR:", result.stderr)
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f"ERROR running {variant}:")
-        print(e.stdout)
-        print(e.stderr)
+
+        # Check if backtest succeeded by looking for results
+        if result.returncode == 0 or "BACKTESTING REPORT" in result.stdout:
+            # Move the exported file to our results dir
+            # Freqtrade names it like: backtest-result-YYYY-MM-DD_HH-MM-SS.json
+            if os.path.exists(export_dir):
+                # Find the most recent export file
+                files = sorted(Path(export_dir).glob("*.json"), key=os.path.getmtime, reverse=True)
+                if files:
+                    latest = files[0]
+                    dest = os.path.join(RESULTS_DIR, f"trades_{variant}.json")
+                    # Copy instead of move to preserve original
+                    import shutil
+                    shutil.copy(str(latest), dest)
+                    print(f"✓ Saved results to {dest}")
+
+            # Extract summary from stdout
+            summary = extract_summary_from_output(result.stdout, variant)
+            if summary:
+                summary_file = os.path.join(RESULTS_DIR, f"summary_{variant}.txt")
+                with open(summary_file, "w") as f:
+                    f.write(summary)
+
+            return True
+        else:
+            print(f"✗ Backtest failed for {variant}")
+            return False
+
+    except Exception as e:
+        print(f"ERROR running {variant}: {e}")
         return False
+
+
+def extract_summary_from_output(output: str, variant: str) -> str:
+    """Extract the summary table from freqtrade output"""
+    lines = output.split('\n')
+    summary_lines = []
+    in_summary = False
+
+    for line in lines:
+        if 'BACKTESTING REPORT' in line or 'STRATEGY SUMMARY' in line:
+            in_summary = True
+        if in_summary:
+            summary_lines.append(line)
+            if '========================' in line and len(summary_lines) > 5:
+                break
+
+    return '\n'.join(summary_lines) if summary_lines else ""
 
 
 def parse_metrics(variant: str):
     """Parse backtest results from trades export"""
-    trades_file = EXPORT_TRADES.format(variant=variant)
+    trades_file = os.path.join(RESULTS_DIR, f"trades_{variant}.json")
 
     if not os.path.exists(trades_file):
         print(f"Warning: {trades_file} not found")
@@ -71,7 +116,18 @@ def parse_metrics(variant: str):
 
     try:
         with open(trades_file, "r") as f:
-            trades = json.load(f)
+            data = json.load(f)
+
+        # Handle different export formats
+        if isinstance(data, list):
+            trades = data
+        elif isinstance(data, dict):
+            # Newer format has metadata
+            trades = data.get("trades", [])
+        else:
+            print(f"Unknown format in {trades_file}")
+            return None
+
     except Exception as e:
         print(f"Error reading {trades_file}: {e}")
         return None
@@ -104,7 +160,13 @@ def parse_metrics(variant: str):
     peak = 0
 
     for t in trades:
-        profit_pct = t.get("profit_ratio", 0.0) * 100  # Convert to percentage
+        # Handle different profit field names
+        profit_pct = t.get("profit_ratio", t.get("profit_percent", 0.0))
+        if isinstance(profit_pct, str):
+            profit_pct = float(profit_pct.replace("%", ""))
+        else:
+            profit_pct = profit_pct * 100  # Convert ratio to percentage
+
         total_profit += profit_pct
 
         # Track drawdown
@@ -162,6 +224,15 @@ def main():
     print(f"Results will be saved to: {RESULTS_DIR}")
     print()
 
+    # Check if freqtrade is available
+    try:
+        result = subprocess.run(["freqtrade", "--version"], capture_output=True, text=True)
+        print(f"Freqtrade version: {result.stdout.strip()}\n")
+    except Exception as e:
+        print(f"ERROR: Cannot run freqtrade command: {e}")
+        print("Make sure freqtrade is installed and in your PATH")
+        sys.exit(1)
+
     # Run all variants
     successful_variants = []
     for v in VARIANTS:
@@ -195,13 +266,14 @@ def main():
 
     # Write CSV
     fieldnames = list(rows[0].keys())
-    with open(FINAL_CSV, "w", newline="") as f:
+    csv_file = os.path.join(RESULTS_DIR, "playbook_summary.csv")
+    with open(csv_file, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
 
     print(f"\n{'='*60}")
-    print(f"Summary saved to: {FINAL_CSV}")
+    print(f"Summary saved to: {csv_file}")
     print(f"{'='*60}\n")
 
     # Print top 3 variants
@@ -209,10 +281,12 @@ def main():
     print(f"{'-'*60}")
     for i, row in enumerate(rows[:3], 1):
         print(f"{i}. {row['Variant']}: {row['Expectancy%']}% expectancy, "
-              f"{row['WinRate%']}% win rate, {row['Trades']} trades")
+              f"{row['WinRate%']}% win rate, {row['Trades']} trades, "
+              f"{row['TotalProfit%']}% total profit")
 
     print(f"\n{'='*60}")
     print("Backtest complete!")
+    print(f"View detailed results in: {RESULTS_DIR}/")
     print(f"{'='*60}")
 
 
